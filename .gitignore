@@ -1,0 +1,22 @@
+assets/external/
+*.db
+*.db-shm
+*.db-wal
+.states
+.web
+.reflex/
+__pycache__/
+*.py[cod]
+.venv/
+
+# Credenciais — NUNCA commitar
+.env
+.env.local
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+*.log
+
+# macOS
+.DS_Store
