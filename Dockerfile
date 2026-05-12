@@ -21,6 +21,6 @@ COPY . .
 # Inicializa o Reflex (instala pacotes npm, cria .web/)
 RUN reflex init
 
-EXPOSE 3000 8000
+EXPOSE 3000
 
 CMD ["reflex", "run", "--env", "prod"]
