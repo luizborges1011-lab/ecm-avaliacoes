@@ -5,12 +5,16 @@ from reflex_components_radix.plugin import RadixThemesPlugin
 
 _railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 
+# Em produção (Railway), frontend e backend devem rodar na mesma porta.
+# PORT é injetado automaticamente pelo Railway.
+_port = int(os.getenv("PORT", 3000))
+
 config = rx.Config(
     app_name="ecm_avaliacoes",
-    api_url=f"https://{_railway_domain}" if _railway_domain else "http://localhost:8000",
+    api_url=f"https://{_railway_domain}" if _railway_domain else f"http://localhost:{_port}",
     db_url="sqlite:///ecm_avaliacoes.db",
-    frontend_port=3001,  # nginx fica na 3000; Reflex frontend na 3001
-    backend_port=8000,
+    frontend_port=_port,
+    backend_port=_port,
     tailwind=None,
     plugins=[
         SitemapPlugin(),
