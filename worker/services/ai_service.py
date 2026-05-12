@@ -181,9 +181,10 @@ Avalie o atendimento e retorne EXATAMENTE neste formato:
 [texto curto]"""
 
 
-def avaliar_conversa(relatorio: str) -> str:
+def avaliar_conversa(relatorio: str, prompt_template: str | None = None) -> str:
     client = _get_client()
-    prompt = PROMPT_AVALIACAO.format(relatorio=relatorio)
+    template = prompt_template if prompt_template and "{relatorio}" in prompt_template else PROMPT_AVALIACAO
+    prompt = template.format(relatorio=relatorio)
     resp = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=[{"role": "user", "content": prompt}],

@@ -93,7 +93,7 @@ def _calcular_tempo(abertura: str, fechamento: str) -> str:
         return "0h 00min"
 
 
-def construir_relatorio(texto_exportado: str) -> dict:
+def construir_relatorio(texto_exportado: str, nomes_internos: set[str] | None = None) -> dict:
     """
     Recebe o texto bruto do Digisac export e retorna:
     {
@@ -111,13 +111,6 @@ def construir_relatorio(texto_exportado: str) -> dict:
     fechamento = _extrair_campo(texto, r"Fechamento:\s*(.+)")
     resumo = _extrair_campo(texto, r"Resumo do atendimento:\s*([^\n]+)")
 
-    tempo_str = _calcular_tempo(abertura, fechamento)
-    try:
-        partes = tempo_str.replace("h", "").replace("min", "").split()
-        tempo_minutos = int(partes[0]) * 60 + int(partes[1])
-    except Exception:
-        tempo_minutos = 0
-
     texto_processado = _substituir_midias(texto)
 
     mensagens = []
@@ -127,6 +120,55 @@ def construir_relatorio(texto_exportado: str) -> dict:
         conteudo = m.group(3).strip()
         if conteudo and conteudo != "undefined":
             mensagens.append((autor, data_hora, conteudo))
+
+    # Tempo = duração real da conversa (1ª → última mensagem).
+    # Evita contar fila de espera, ticket aberto overnight, etc.
+    tempo_minutos = 0
+    tempo_str = "0h 00min"
+    if len(mensagens) >= 2:
+        try:
+            fmt = "%d/%m/%Y %H:%M:%S"
+            t_ini = datetime.strptime(mensagens[0][1], fmt)
+            t_fim = datetime.strptime(mensagens[-1][1], fmt)
+            tempo_minutos = max(0, int((t_fim - t_ini).total_seconds() / 60))
+            tempo_str = f"{tempo_minutos // 60}h {tempo_minutos % 60:02d}min"
+        except Exception:
+            tempo_str = _calcular_tempo(abertura, fechamento)
+            try:
+                partes = tempo_str.replace("h", "").replace("min", "").split()
+                tempo_minutos = int(partes[0]) * 60 + int(partes[1])
+            except Exception:
+                tempo_minutos = 0
+    elif mensagens:
+        # Apenas 1 mensagem — considera duração zero
+        tempo_minutos = 0
+        tempo_str = "0h 00min"
+    else:
+        # Sem mensagens — cai para abertura/fechamento do ticket
+        tempo_str = _calcular_tempo(abertura, fechamento)
+        try:
+            partes = tempo_str.replace("h", "").replace("min", "").split()
+            tempo_minutos = int(partes[0]) * 60 + int(partes[1])
+        except Exception:
+            tempo_minutos = 0
+
+    # Atendente principal = usuário registrado no sistema com mais mensagens.
+    # Usa lista positiva (nomes_internos) para evitar que clientes ou terceiros
+    # sejam confundidos com atendentes quando o nome do contato não bate exato.
+    from collections import Counter
+    if nomes_internos:
+        _contagem = Counter(
+            a for a, _, _ in mensagens
+            if a.lower().strip() in nomes_internos
+        )
+    else:
+        # Fallback sem lista: exclui cliente, BOT e Sistema pela exclusão
+        _excluidos = {"sistema", "bot", nome_contato.lower().strip()}
+        _contagem = Counter(
+            a for a, _, _ in mensagens
+            if a.lower().strip() not in _excluidos
+        )
+    atendente_principal = _contagem.most_common(1)[0][0] if _contagem else "Não identificado"
 
     sep = "═" * 59
     relatorio = (
@@ -160,4 +202,5 @@ def construir_relatorio(texto_exportado: str) -> dict:
         "relatorio_final": relatorio,
         "tempo_minutos": tempo_minutos,
         "tempo_formatado": tempo_str,
+        "atendente_principal": atendente_principal,
     }

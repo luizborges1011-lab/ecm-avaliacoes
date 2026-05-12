@@ -1,11 +1,15 @@
+import os
 import reflex as rx
 from reflex_base.plugins.sitemap import SitemapPlugin
 from reflex_components_radix.plugin import RadixThemesPlugin
 
+_railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+
 config = rx.Config(
     app_name="ecm_avaliacoes",
+    api_url=f"https://{_railway_domain}" if _railway_domain else "http://localhost:8000",
     db_url="sqlite:///ecm_avaliacoes.db",
-    frontend_port=3000,
+    frontend_port=int(os.getenv("PORT", 3000)),
     backend_port=8000,
     tailwind=None,
     plugins=[

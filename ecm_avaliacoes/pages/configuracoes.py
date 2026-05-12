@@ -1,5 +1,6 @@
 import reflex as rx
 from ecm_avaliacoes.components import page_layout
+from ecm_avaliacoes.state import AppState
 
 
 def config_section(title: str, description: str, content: rx.Component) -> rx.Component:
@@ -23,7 +24,218 @@ def config_section(title: str, description: str, content: rx.Component) -> rx.Co
     )
 
 
-def configuracoes_content() -> rx.Component:
+def user_badge(is_admin: bool) -> rx.Component:
+    return rx.cond(
+        is_admin,
+        rx.badge("Admin", color_scheme="violet", variant="solid", size="1"),
+        rx.badge("Atendente", color_scheme="gray", variant="soft", size="1"),
+    )
+
+
+def user_status_badge(ativo: bool) -> rx.Component:
+    return rx.cond(
+        ativo,
+        rx.badge("Ativo", color_scheme="green", variant="soft", size="1"),
+        rx.badge("Inativo", color_scheme="red", variant="soft", size="1"),
+    )
+
+
+def user_row(user) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(
+            rx.flex(
+                rx.avatar(fallback=user.nome[:2], size="1", color_scheme="violet"),
+                rx.flex(
+                    rx.text(user.nome, size="2", weight="medium", color="#1E293B"),
+                    rx.text(user.email, size="1", color="#94A3B8"),
+                    direction="column", gap="0",
+                ),
+                align="center", gap="2",
+            )
+        ),
+        rx.table.cell(user_badge(user.is_admin)),
+        rx.table.cell(rx.text(user.atendente_nome, size="2", color="#64748B")),
+        rx.table.cell(user_status_badge(user.ativo)),
+        rx.table.cell(
+            rx.flex(
+                rx.icon_button(
+                    rx.icon("pencil", size=14),
+                    variant="ghost", color_scheme="violet", size="1",
+                    on_click=AppState.open_edit_user(user.id),
+                ),
+                rx.icon_button(
+                    rx.icon("trash-2", size=14),
+                    variant="ghost", color_scheme="red", size="1",
+                    on_click=AppState.confirm_delete_user(user.id),
+                ),
+                gap="1",
+            )
+        ),
+        style={"_hover": {"background_color": "#F8FAFC"}},
+    )
+
+
+def user_form_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.cond(AppState.editando_usuario, "Editar Usuário", "Novo Usuário")
+            ),
+            rx.flex(
+                rx.flex(
+                    rx.text("Nome completo", size="2", weight="medium", color="#374151"),
+                    rx.input(
+                        placeholder="Nome do usuário",
+                        value=AppState.user_form_nome,
+                        on_change=AppState.set_user_form_nome,
+                    ),
+                    direction="column", gap="1",
+                ),
+                rx.flex(
+                    rx.text("E-mail", size="2", weight="medium", color="#374151"),
+                    rx.input(
+                        placeholder="email@ecm.com.br",
+                        type="email",
+                        value=AppState.user_form_email,
+                        on_change=AppState.set_user_form_email,
+                    ),
+                    direction="column", gap="1",
+                ),
+                rx.flex(
+                    rx.text(
+                        rx.cond(
+                            AppState.editando_usuario,
+                            "Nova senha (deixe em branco para manter)",
+                            "Senha",
+                        ),
+                        size="2", weight="medium", color="#374151",
+                    ),
+                    rx.input(
+                        placeholder="••••••••",
+                        type="password",
+                        value=AppState.user_form_senha,
+                        on_change=AppState.set_user_form_senha,
+                    ),
+                    direction="column", gap="1",
+                ),
+                rx.flex(
+                    rx.text("Perfil de acesso", size="2", weight="medium", color="#374151"),
+                    rx.select(
+                        ["Atendente", "Admin"],
+                        value=rx.cond(AppState.user_form_is_admin, "Admin", "Atendente"),
+                        on_change=AppState.set_user_form_is_admin,
+                        width="100%",
+                    ),
+                    direction="column", gap="1",
+                ),
+                rx.flex(
+                    rx.text("Atendente vinculado", size="2", weight="medium", color="#374151"),
+                    rx.text("Define quais avaliações este usuário pode ver", size="1", color="#94A3B8"),
+                    rx.select(
+                        AppState.atendentes_nomes,
+                        placeholder="Selecione o atendente...",
+                        value=AppState.user_form_atendente_nome,
+                        on_change=AppState.set_user_form_atendente_nome,
+                        width="100%",
+                    ),
+                    direction="column", gap="1",
+                ),
+                direction="column", gap="4", padding_y="4",
+            ),
+            rx.flex(
+                rx.button(
+                    "Cancelar",
+                    variant="outline", color_scheme="gray",
+                    on_click=AppState.close_user_form(False),
+                ),
+                rx.button(
+                    rx.cond(AppState.editando_usuario, "Salvar alterações", "Criar usuário"),
+                    color_scheme="violet",
+                    on_click=AppState.save_user,
+                ),
+                gap="3", justify="end",
+            ),
+            max_width="480px",
+        ),
+        open=AppState.show_user_form,
+        on_open_change=AppState.close_user_form,
+    )
+
+
+def delete_confirm_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Excluir usuário"),
+            rx.text(
+                "Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.",
+                size="2", color="#64748B",
+            ),
+            rx.flex(
+                rx.button(
+                    "Cancelar",
+                    variant="outline", color_scheme="gray",
+                    on_click=AppState.cancel_delete_user(False),
+                ),
+                rx.button("Excluir", color_scheme="red", on_click=AppState.delete_user),
+                gap="3", justify="end", margin_top="4",
+            ),
+            max_width="400px",
+        ),
+        open=AppState.show_delete_confirm,
+        on_open_change=AppState.cancel_delete_user,
+    )
+
+
+
+
+def save_button() -> rx.Component:
+    return rx.flex(
+        rx.button(
+            rx.icon("save", size=14), "Salvar Configurações",
+            color_scheme="violet", size="3",
+            on_click=AppState.salvar_configuracoes,
+        ),
+        justify="end",
+    )
+
+
+def tab_usuarios() -> rx.Component:
+    return rx.flex(
+        config_section(
+            "Gerenciamento de Usuários",
+            "Adicione, edite ou remova usuários. Admins visualizam todos os dados; atendentes veem apenas o próprio desempenho.",
+            rx.flex(
+                rx.flex(
+                    rx.flex(flex="1"),
+                    rx.button(
+                        rx.icon("plus", size=14), "Novo usuário",
+                        color_scheme="violet", size="2",
+                        on_click=AppState.open_add_user,
+                    ),
+                    justify="end", margin_bottom="3",
+                ),
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("Usuário"),
+                            rx.table.column_header_cell("Perfil"),
+                            rx.table.column_header_cell("Atendente vinculado"),
+                            rx.table.column_header_cell("Status"),
+                            rx.table.column_header_cell("Ações"),
+                        ),
+                        background_color="#F8FAFC",
+                    ),
+                    rx.table.body(rx.foreach(AppState.usuarios, user_row)),
+                    width="100%", variant="ghost",
+                ),
+                direction="column",
+            ),
+        ),
+        direction="column", gap="5",
+    )
+
+
+def tab_avaliacao() -> rx.Component:
     return rx.flex(
         config_section(
             "Limites de Nota",
@@ -31,83 +243,167 @@ def configuracoes_content() -> rx.Component:
             rx.flex(
                 rx.flex(
                     rx.text("Nota mínima — Excelente", size="2", weight="medium", color="#374151"),
-                    rx.flex(rx.input(placeholder="8.0", default_value="8.0", width="100px"), rx.text("de 0 a 10", size="1", color="#94A3B8"), align="center", gap="2"),
+                    rx.flex(
+                        rx.input(
+                            placeholder="8.0",
+                            value=AppState.config_nota_excelente,
+                            on_change=AppState.set_config_nota_excelente,
+                            width="100px",
+                        ),
+                        rx.text("de 0 a 10", size="1", color="#94A3B8"),
+                        align="center", gap="2",
+                    ),
                     justify="between", align="center",
                 ),
                 rx.flex(
                     rx.text("Nota mínima — Bom", size="2", weight="medium", color="#374151"),
-                    rx.flex(rx.input(placeholder="6.0", default_value="6.0", width="100px"), rx.text("de 0 a 10", size="1", color="#94A3B8"), align="center", gap="2"),
+                    rx.flex(
+                        rx.input(
+                            placeholder="6.0",
+                            value=AppState.config_nota_bom,
+                            on_change=AppState.set_config_nota_bom,
+                            width="100px",
+                        ),
+                        rx.text("de 0 a 10", size="1", color="#94A3B8"),
+                        align="center", gap="2",
+                    ),
                     justify="between", align="center",
                 ),
                 rx.flex(
                     rx.text("Nota mínima — Regular", size="2", weight="medium", color="#374151"),
-                    rx.flex(rx.input(placeholder="4.0", default_value="4.0", width="100px"), rx.text("de 0 a 10", size="1", color="#94A3B8"), align="center", gap="2"),
+                    rx.flex(
+                        rx.input(
+                            placeholder="4.0",
+                            value=AppState.config_nota_regular,
+                            on_change=AppState.set_config_nota_regular,
+                            width="100px",
+                        ),
+                        rx.text("de 0 a 10", size="1", color="#94A3B8"),
+                        align="center", gap="2",
+                    ),
                     justify="between", align="center",
                 ),
                 direction="column", gap="4",
             ),
         ),
+        save_button(),
+        direction="column", gap="5",
+    )
+
+
+
+
+def tab_prompt_ia() -> rx.Component:
+    return rx.flex(
         config_section(
-            "Prazos de Análise",
-            "Tempo máximo para cada etapa do fluxo de trabalho.",
+            "Prompt de Avaliação da IA",
+            "Texto enviado ao modelo para avaliar cada atendimento. O marcador {relatorio} é obrigatório — é onde o histórico da conversa é inserido.",
             rx.flex(
-                rx.flex(
-                    rx.text("Prazo para Análise Humana", size="2", weight="medium", color="#374151"),
-                    rx.flex(rx.input(placeholder="48", default_value="48", width="80px"), rx.text("horas", size="2", color="#94A3B8"), align="center", gap="2"),
-                    justify="between", align="center",
+                # Aviso de {relatorio} ausente — só aparece enquanto editando
+                rx.cond(
+                    AppState.config_prompt_editando & ~AppState.config_prompt_avaliacao.contains("{relatorio}"),
+                    rx.flex(
+                        rx.icon("triangle-alert", size=16, color="#DC2626"),
+                        rx.text(
+                            "O marcador {relatorio} está ausente. O prompt não pode ser salvo sem ele.",
+                            size="2", color="#DC2626",
+                        ),
+                        align="center", gap="2",
+                        padding="12px 16px",
+                        border_radius="8px",
+                        background_color="#FEF2F2",
+                        border="1px solid #FECACA",
+                    ),
+                    rx.box(),
                 ),
-                rx.flex(
-                    rx.text("Prazo para envio de Feedback", size="2", weight="medium", color="#374151"),
-                    rx.flex(rx.input(placeholder="72", default_value="72", width="80px"), rx.text("horas", size="2", color="#94A3B8"), align="center", gap="2"),
-                    justify="between", align="center",
+                # Textarea — read-only quando não está editando
+                rx.text_area(
+                    value=AppState.config_prompt_avaliacao,
+                    on_change=AppState.set_config_prompt_avaliacao,
+                    rows="28",
+                    read_only=~AppState.config_prompt_editando,
+                    style={
+                        "font_family": "monospace",
+                        "font_size": "13px",
+                        "line_height": "1.6",
+                        "resize": "vertical",
+                        "width": "100%",
+                        "border": "1px solid #E2E8F0",
+                        "border_radius": "8px",
+                        "padding": "12px",
+                        "background": rx.cond(AppState.config_prompt_editando, "white", "#F8FAFC"),
+                        "color": "#1E293B",
+                        "cursor": rx.cond(AppState.config_prompt_editando, "text", "default"),
+                        "_focus": {"border_color": "#7700FF", "outline": "none"},
+                        "transition": "background 0.2s ease",
+                    },
                 ),
-                direction="column", gap="4",
+                # Botões — mudam conforme o modo
+                rx.cond(
+                    AppState.config_prompt_editando,
+                    # Modo edição: Restaurar padrão | Cancelar | Salvar
+                    rx.flex(
+                        rx.button(
+                            rx.icon("rotate-ccw", size=14), "Restaurar padrão",
+                            variant="ghost", color_scheme="gray", size="2",
+                            on_click=AppState.restaurar_prompt_padrao,
+                        ),
+                        rx.flex(
+                            rx.button(
+                                "Cancelar",
+                                variant="outline", color_scheme="gray", size="2",
+                                on_click=AppState.cancelar_edicao_prompt,
+                            ),
+                            rx.button(
+                                rx.icon("save", size=14), "Salvar Prompt",
+                                color_scheme="violet", size="2",
+                                on_click=AppState.salvar_prompt,
+                                disabled=~AppState.config_prompt_avaliacao.contains("{relatorio}"),
+                            ),
+                            gap="2",
+                        ),
+                        justify="between", align="center",
+                    ),
+                    # Modo leitura: apenas o botão Editar
+                    rx.flex(
+                        rx.button(
+                            rx.icon("pencil", size=14), "Editar Prompt",
+                            variant="outline", color_scheme="violet", size="2",
+                            on_click=AppState.iniciar_edicao_prompt,
+                        ),
+                        justify="end",
+                    ),
+                ),
+                direction="column", gap="3",
             ),
         ),
-        config_section(
-            "Integração OpenAI",
-            "Configurações do modelo de IA para análise de atendimentos.",
-            rx.flex(
-                rx.flex(
-                    rx.text("Modelo de IA", size="2", weight="medium", color="#374151"),
-                    rx.select(["gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo"], default_value="gpt-4.1-mini", width="200px"),
-                    justify="between", align="center",
-                ),
-                rx.flex(
-                    rx.text("Chave API OpenAI", size="2", weight="medium", color="#374151"),
-                    rx.input(placeholder="sk-...", type="password", width="280px"),
-                    justify="between", align="center",
-                ),
-                direction="column", gap="4",
+        direction="column", gap="5",
+    )
+
+
+def configuracoes_content() -> rx.Component:
+    return rx.flex(
+        user_form_dialog(),
+        delete_confirm_dialog(),
+        rx.tabs.root(
+            rx.tabs.list(
+                rx.tabs.trigger("Usuários", value="usuarios"),
+                rx.tabs.trigger("Avaliação", value="avaliacao"),
+                rx.tabs.trigger("Prompt IA", value="prompt_ia"),
             ),
-        ),
-        config_section(
-            "Integração Digisac",
-            "Credenciais de acesso à API do Digisac.",
-            rx.flex(
-                rx.flex(
-                    rx.text("URL da API", size="2", weight="medium", color="#374151"),
-                    rx.input(default_value="https://contabilmadruga.digisac.me/api/v1", width="340px"),
-                    justify="between", align="center",
-                ),
-                rx.flex(
-                    rx.text("Bearer Token", size="2", weight="medium", color="#374151"),
-                    rx.input(placeholder="Token de autenticação", type="password", width="280px"),
-                    justify="between", align="center",
-                ),
-                direction="column", gap="4",
-            ),
-        ),
-        rx.flex(
-            rx.button(rx.icon("save", size=14), "Salvar Configurações", color_scheme="violet", size="3"),
-            justify="end",
+            rx.tabs.content(tab_usuarios(), value="usuarios", padding_top="5"),
+            rx.tabs.content(tab_avaliacao(), value="avaliacao", padding_top="5"),
+            rx.tabs.content(tab_prompt_ia(), value="prompt_ia", padding_top="5"),
+            value=AppState.config_aba,
+            on_change=AppState.set_config_aba,
+            width="100%",
         ),
         direction="column",
-        gap="5",
+        gap="4",
         width="100%",
     )
 
 
-@rx.page(route="/configuracoes", title="Configurações — ECM")
+@rx.page(route="/configuracoes", title="Configurações — ECM", on_load=AppState.verificar_auth_admin)
 def configuracoes() -> rx.Component:
     return page_layout(configuracoes_content(), "Configurações")

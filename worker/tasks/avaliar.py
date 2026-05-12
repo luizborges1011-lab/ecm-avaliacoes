@@ -17,11 +17,26 @@ from worker.services.database import (
     salvar_avaliacao,
     adicionar_erro_fila,
     registrar_audit,
+    carregar_nomes_internos,
+    carregar_prompt_avaliacao,
 )
 
 logger = logging.getLogger(__name__)
 
 BRT = timezone(timedelta(hours=-3))
+
+
+def _limpar_nome_atendente(nome: str) -> str:
+    """Remove anotações de múltiplos atendentes, mantendo apenas o principal.
+
+    Ex: 'Marina Schropfer (predominante) e Thais Seratto' → 'Marina Schropfer'
+        'Samanta Pertille (com participação de X e Y)'    → 'Samanta Pertille'
+    """
+    # Remove tudo a partir de '('
+    nome = re.sub(r'\s*\(.*', '', nome)
+    # Remove sufixo ' e Nome' que indica segundo atendente
+    nome = re.sub(r'\s+e\s+[A-ZÁÀÃÂÉÊÍÓÔÕÚÜ]\S.*', '', nome)
+    return nome.strip()
 
 
 def calcular_periodo() -> tuple[datetime, datetime]:
@@ -93,14 +108,19 @@ def _extrair_bloco(texto: str, cabecalho: str, proximo_cabecalho: str | None = N
     return "Não identificado"
 
 
-def processar_chamado(ticket: dict) -> bool:
-    """Processa um único chamado. Retorna True se bem sucedido."""
+def processar_chamado(ticket: dict, nomes_internos: set[str] | None = None, prompt_template: str | None = None) -> bool:
+    """Processa um único chamado. Retorna True se bem sucedido ou ignorado."""
     protocol = str(ticket.get("protocol", ""))
     contact_name = ticket.get("contact", {}).get("name") or ticket.get("contactName", "")
 
     if not protocol:
         logger.warning("Chamado sem protocolo, ignorando.")
         return False
+
+    # Descarta chamados entre usuários internos (atendentes conversando entre si)
+    if nomes_internos and contact_name and contact_name.strip().lower() in nomes_internos:
+        logger.info(f"⏭️  Protocolo {protocol} ignorado — contato interno: {contact_name}")
+        return True
 
     if protocolo_ja_processado(protocol):
         logger.info(f"Protocolo {protocol} já processado, pulando.")
@@ -116,16 +136,17 @@ def processar_chamado(ticket: dict) -> bool:
         return False
 
     try:
-        relatorio_info = construir_relatorio(texto_exportado)
+        relatorio_info = construir_relatorio(texto_exportado, nomes_internos=nomes_internos)
     except Exception as e:
         logger.error(f"Erro ao construir relatório {protocol}: {e}")
         adicionar_erro_fila(protocol, f"Erro ao construir relatório: {e}")
         return False
 
     relatorio_final = relatorio_info["relatorio_final"]
+    atendente_principal = relatorio_info.get("atendente_principal", "Não identificado")
 
     try:
-        avaliacao_texto = avaliar_conversa(relatorio_final)
+        avaliacao_texto = avaliar_conversa(relatorio_final, prompt_template=prompt_template)
     except Exception as e:
         logger.error(f"Erro na avaliação IA {protocol}: {e}")
         adicionar_erro_fila(protocol, f"Erro na avaliação IA: {e}")
@@ -134,7 +155,12 @@ def processar_chamado(ticket: dict) -> bool:
     nota = _parse_nota(avaliacao_texto)
 
     cliente = _extrair_campo_texto(avaliacao_texto, r"Nome do cliente:\s*([^\n\r]+)")
-    responsavel = _extrair_campo_texto(avaliacao_texto, r"Responsável pelo atendimento:\s*([^\n\r]+)")
+    # Usa contagem real de mensagens; cai para o campo GPT só se não identificado
+    responsavel = atendente_principal
+    if responsavel == "Não identificado":
+        responsavel = _extrair_campo_texto(avaliacao_texto, r"Responsável pelo atendimento:\s*([^\n\r]+)")
+    # Limpa qualquer anotação do tipo "(com participação de X)" ou "e Thais Y"
+    responsavel = _limpar_nome_atendente(responsavel)
     data_atendimento = _extrair_campo_texto(avaliacao_texto, r"Data do atendimento:\s*([^\n\r]+)")
     hora_inicio = _extrair_campo_texto(avaliacao_texto, r"Horário de início:\s*([^\n\r]+)")
     hora_fim = _extrair_campo_texto(avaliacao_texto, r"Horário de fim:\s*([^\n\r]+)")
@@ -164,7 +190,6 @@ def processar_chamado(ticket: dict) -> bool:
         "feedback_final": feedback_final,
         "avaliacao_ai_completa": avaliacao_texto,
         "relatorio_conversa_original": relatorio_final,
-        "kanban_status": "Pendente",
         "data_avaliacao": datetime.utcnow().isoformat(),
     }
 
@@ -175,7 +200,7 @@ def processar_chamado(ticket: dict) -> bool:
             acao="Avaliação processada",
             entidade="Avaliação",
             entidade_id=protocol,
-            detalhes=f"Processamento automático via IA — gpt-4.1-mini. Nota: {nota}",
+            detalhes=f"Processamento automático via IA. Nota: {nota}",
         )
         logger.info(f"✅ Protocolo {protocol} avaliado. Nota: {nota} ({_nota_para_status(nota)})")
         return True
@@ -190,24 +215,34 @@ def executar_ciclo(data_inicio: datetime | None = None, data_fim: datetime | Non
     if data_inicio is None or data_fim is None:
         data_inicio, data_fim = calcular_periodo()
 
+    periodo_str = f"{data_inicio.strftime('%d/%m %H:%M')}→{data_fim.strftime('%H:%M')}"
     logger.info(f"🔄 Iniciando ciclo: {data_inicio.isoformat()} → {data_fim.isoformat()}")
+
+    nomes_internos = carregar_nomes_internos()
+    logger.info(f"🔒 {len(nomes_internos)} nomes internos carregados para filtragem.")
+
+    prompt_template = carregar_prompt_avaliacao()
+    if prompt_template:
+        logger.info("📝 Prompt customizado carregado do banco.")
+    else:
+        logger.info("📝 Usando prompt padrão.")
 
     try:
         chamados = buscar_chamados_fechados(data_inicio, data_fim)
     except Exception as e:
         logger.error(f"Erro ao buscar chamados: {e}")
-        return {"sucesso": 0, "erro": 1, "total": 0}
+        return {"sucesso": 0, "erro": 1, "total": 0, "periodo": periodo_str}
 
     logger.info(f"📋 {len(chamados)} chamados encontrados.")
 
     sucesso = 0
     erro = 0
     for ticket in chamados:
-        ok = processar_chamado(ticket)
+        ok = processar_chamado(ticket, nomes_internos, prompt_template=prompt_template)
         if ok:
             sucesso += 1
         else:
             erro += 1
 
     logger.info(f"✅ Ciclo concluído: {sucesso} processados, {erro} erros.")
-    return {"sucesso": sucesso, "erro": erro, "total": len(chamados)}
+    return {"sucesso": sucesso, "erro": erro, "total": len(chamados), "periodo": periodo_str}

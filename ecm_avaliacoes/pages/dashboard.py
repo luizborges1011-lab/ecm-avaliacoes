@@ -225,8 +225,34 @@ def alerts_section() -> rx.Component:
     )
 
 
+def mes_filter_bar() -> rx.Component:
+    return rx.flex(
+        rx.icon("calendar", size=16, color="#7700FF"),
+        rx.text("Período:", size="2", color="#64748B"),
+        rx.select(
+            AppState.meses_disponiveis,
+            placeholder="Todos os meses",
+            value=AppState.filter_mes,
+            on_change=AppState.set_filter_mes,
+            width="160px",
+        ),
+        rx.cond(
+            AppState.filter_mes != "",
+            rx.button(
+                rx.icon("x", size=13), "Limpar",
+                variant="ghost", color_scheme="gray", size="1",
+                on_click=AppState.set_filter_mes(""),
+            ),
+            rx.box(),
+        ),
+        align="center",
+        gap="2",
+    )
+
+
 def dashboard_content() -> rx.Component:
     return rx.flex(
+        mes_filter_bar(),
         rx.grid(
             kpi_card("Nota Média", AppState.nota_media, "star", "#7700FF", "de 0 a 10"),
             kpi_card("Total de Avaliações", AppState.total_avaliacoes.to_string(), "clipboard-list", "#7700FF", "no período"),
@@ -243,11 +269,11 @@ def dashboard_content() -> rx.Component:
             gap="5",
         ),
         direction="column",
-        gap="6",
+        gap="5",
         width="100%",
     )
 
 
-@rx.page(route="/", title="Dashboard — ECM Avaliações", on_load=AppState.carregar_dados)
+@rx.page(route="/", title="Dashboard — ECM Avaliações", on_load=AppState.verificar_auth)
 def dashboard() -> rx.Component:
     return page_layout(dashboard_content(), "Dashboard")

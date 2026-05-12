@@ -21,6 +21,7 @@ def top_bar(title: str = "") -> rx.Component:
 
 def page_layout(content: rx.Component, title: str = "") -> rx.Component:
     return rx.box(
+        rx.toast.provider(),
         rx.cond(
             ~AppState.tv_mode,
             topnav(),

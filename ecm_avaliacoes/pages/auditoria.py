@@ -78,6 +78,6 @@ def auditoria_content() -> rx.Component:
     )
 
 
-@rx.page(route="/auditoria", title="Auditoria — ECM")
+@rx.page(route="/auditoria", title="Auditoria — ECM", on_load=AppState.verificar_auth_admin)
 def auditoria() -> rx.Component:
     return page_layout(auditoria_content(), "Log de Auditoria")

@@ -86,3 +86,49 @@ def listar_erros_pendentes() -> list[dict]:
 
 def marcar_erro_resolvido(erro_id: int) -> None:
     _get_client().table("filaerros").update({"resolvido": True}).eq("id", erro_id).execute()
+
+
+def carregar_prompt_avaliacao() -> str | None:
+    """Retorna o prompt customizado salvo no Supabase, ou None se não configurado."""
+    try:
+        result = _get_client().table("configuracoes").select("valor").eq("chave", "app_config").execute()
+        if result.data:
+            valor = result.data[0].get("valor") or {}
+            if isinstance(valor, str):
+                import json
+                valor = json.loads(valor)
+            prompt = valor.get("prompt_avaliacao")
+            if prompt and "{relatorio}" in prompt:
+                return prompt
+        return None
+    except Exception:
+        return None
+
+
+def registrar_ciclo_log(tipo: str, total: int, sucesso: int, erros: int, periodo: str) -> None:
+    import json
+    from datetime import datetime
+    detalhes = json.dumps({"total": total, "sucesso": sucesso, "erros": erros, "periodo": periodo})
+    _get_client().table("auditlog").insert({
+        "usuario": "Sistema",
+        "acao": "Ciclo executado",
+        "entidade": "Ciclo",
+        "entidade_id": tipo,
+        "detalhes": detalhes,
+        "criado_em": datetime.utcnow().isoformat(),
+    }).execute()
+
+
+def carregar_nomes_internos() -> set[str]:
+    """Carrega todos os nomes internos (usuarios + atendentes vinculados) para filtragem."""
+    try:
+        result = _get_client().table("usuarios").select("nome, atendente_nome").execute()
+        nomes: set[str] = set()
+        for u in result.data or []:
+            if u.get("nome"):
+                nomes.add(u["nome"].strip().lower())
+            if u.get("atendente_nome"):
+                nomes.add(u["atendente_nome"].strip().lower())
+        return nomes
+    except Exception:
+        return set()

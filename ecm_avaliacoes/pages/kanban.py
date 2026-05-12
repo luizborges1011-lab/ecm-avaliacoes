@@ -103,18 +103,47 @@ def kanban_column(
 
 def kanban_content() -> rx.Component:
     return rx.flex(
-        kanban_column("Pendente", AppState.avaliacoes_pendentes, "gray", "clock"),
-        kanban_column("Análise Humana", AppState.avaliacoes_analise, "orange", "user-check"),
-        kanban_column("Feedback", AppState.avaliacoes_feedback, "purple", "message-circle"),
-        kanban_column("Com Ressalvas", AppState.avaliacoes_com_ressalvas, "yellow", "triangle-alert"),
-        kanban_column("Concluído", AppState.avaliacoes_sem_ressalvas, "green", "circle-check"),
-        gap="4",
-        overflow_x="auto",
+        # Filtro de mês
+        rx.flex(
+            rx.icon("calendar", size=15, color="#7700FF"),
+            rx.text("Período:", size="2", color="#64748B"),
+            rx.select(
+                AppState.meses_disponiveis,
+                placeholder="Todos os meses",
+                value=AppState.filter_mes,
+                on_change=AppState.set_filter_mes,
+                width="150px",
+            ),
+            rx.cond(
+                AppState.filter_mes != "",
+                rx.button(
+                    rx.icon("x", size=13), "Limpar",
+                    variant="ghost", color_scheme="gray", size="1",
+                    on_click=AppState.set_filter_mes(""),
+                ),
+                rx.box(),
+            ),
+            align="center",
+            gap="2",
+            padding_bottom="4px",
+        ),
+        rx.flex(
+            kanban_column("Pendente", AppState.avaliacoes_pendentes, "gray", "clock"),
+            kanban_column("Análise Humana", AppState.avaliacoes_analise, "orange", "user-check"),
+            kanban_column("Feedback", AppState.avaliacoes_feedback, "purple", "message-circle"),
+            kanban_column("Com Ressalvas", AppState.avaliacoes_com_ressalvas, "yellow", "triangle-alert"),
+            kanban_column("Concluído", AppState.avaliacoes_sem_ressalvas, "green", "circle-check"),
+            gap="4",
+            overflow_x="auto",
+            width="100%",
+            padding_bottom="8px",
+        ),
+        direction="column",
+        gap="3",
         width="100%",
-        padding_bottom="8px",
     )
 
 
-@rx.page(route="/kanban", title="Kanban — ECM", on_load=AppState.carregar_dados)
+@rx.page(route="/kanban", title="Kanban — ECM", on_load=AppState.verificar_auth)
 def kanban() -> rx.Component:
     return page_layout(kanban_content(), "Fluxo de Trabalho")
