@@ -22,9 +22,6 @@ COPY . .
 # Inicializa o Reflex (instala pacotes npm, cria .web/)
 RUN reflex init
 
-# Copia configuração do nginx
-COPY nginx.conf /etc/nginx/nginx.conf
-
 RUN chmod +x start.sh
 
 EXPOSE 3000
