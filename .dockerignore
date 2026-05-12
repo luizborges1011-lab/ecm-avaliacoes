@@ -1,0 +1,15 @@
+.env
+.env.local
+.venv/
+.web/
+.states/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.DS_Store
+logs/
+*.db
+*.log
+celerybeat-schedule
+celerybeat.pid
