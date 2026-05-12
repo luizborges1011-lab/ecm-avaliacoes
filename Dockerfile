@@ -16,9 +16,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Inicializa o Reflex (instala pacotes npm, cria .web/)
+# Inicializa o Reflex (instala pacotes npm, prepara .web/)
 RUN reflex init
 
-EXPOSE 3000
+RUN chmod +x start.sh
 
-CMD ["reflex", "run", "--env", "prod"]
+# Railway roteia para a porta definida em PORT (auto-detectada do EXPOSE)
+EXPOSE 8000
+
+CMD ["./start.sh"]
