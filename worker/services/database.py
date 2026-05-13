@@ -119,6 +119,20 @@ def registrar_ciclo_log(tipo: str, total: int, sucesso: int, erros: int, periodo
     }).execute()
 
 
+def carregar_protocolos_alertados_recentes(janela_segundos: int = 240) -> set[str]:
+    """Retorna protocolos que já receberam alerta nos últimos `janela_segundos` segundos."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=janela_segundos)).isoformat()
+    result = (
+        _get_client()
+        .table("atendimentos_atrasados_log")
+        .select("protocolo")
+        .gte("data_hora_alerta", cutoff)
+        .execute()
+    )
+    return {row["protocolo"] for row in (result.data or [])}
+
+
 def registrar_atrasado(protocolo: str, nome_contato: str, departamento: str, tempo_espera_segundos: int) -> None:
     from datetime import datetime
     _get_client().table("atendimentos_atrasados_log").insert({

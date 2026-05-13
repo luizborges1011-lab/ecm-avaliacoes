@@ -100,13 +100,20 @@ def executar_ciclo_atrasados() -> dict:
         return {"total": 0, "atrasados": 0, "skipped": True}
 
     from worker.services.digisac import buscar_chamados_abertos
-    from worker.services.database import registrar_atrasado
+    from worker.services.database import registrar_atrasado, carregar_protocolos_alertados_recentes
 
     try:
         chamados = buscar_chamados_abertos()
     except Exception as e:
         logger.error(f"[atrasados] Erro ao buscar chamados abertos: {e}")
         return {"total": 0, "atrasados": 0, "erro": str(e)}
+
+    # Protocolos que já receberam alerta nos últimos 4 min (bloqueia duplicatas
+    # de qualquer origem: n8n ainda ativo, múltiplos workers, etc.)
+    try:
+        ja_alertados = carregar_protocolos_alertados_recentes(janela_segundos=240)
+    except Exception:
+        ja_alertados = set()
 
     atrasados = 0
     vistos: set[str] = set()
@@ -121,9 +128,12 @@ def executar_ciclo_atrasados() -> dict:
         protocol = str(ticket.get("protocol") or "")
 
         if protocol in vistos:
-            logger.debug(f"[atrasados] Protocolo {protocol} duplicado na resposta, ignorando.")
             continue
         vistos.add(protocol)
+
+        if protocol in ja_alertados:
+            logger.debug(f"[atrasados] {protocol} já alertado recentemente, ignorando.")
+            continue
         segundos = int(_segundos_espera(ticket.get("updatedAt", "")))
 
         _enviar_alerta_chat(ticket, dept_nome, segundos)
