@@ -12,6 +12,7 @@ import threading
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,19 @@ def _executar():
         logger.info(f"[scheduler] Ciclo finalizado: {resultado}")
     except Exception as exc:
         logger.error(f"[scheduler] Erro no ciclo: {exc}", exc_info=True)
+
+
+def _executar_atrasados():
+    """Wrapper para o ciclo de monitoramento de atendimentos em atraso."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        from worker.tasks.atrasados import executar_ciclo_atrasados
+        resultado = executar_ciclo_atrasados()
+        if not resultado.get("skipped"):
+            logger.info(f"[scheduler] Atrasados: {resultado}")
+    except Exception as exc:
+        logger.error(f"[scheduler] Erro no ciclo de atrasados: {exc}", exc_info=True)
 
 
 def iniciar():
@@ -70,8 +84,15 @@ def iniciar():
             replace_existing=True,
         )
 
+        _scheduler.add_job(
+            _executar_atrasados,
+            IntervalTrigger(minutes=5, timezone="America/Sao_Paulo"),
+            id="ciclo-atrasados",
+            replace_existing=True,
+        )
+
         _scheduler.start()
-        logger.info("[scheduler] Automação iniciada — ciclos: 12:00, 16:00, 00:01 BRT")
+        logger.info("[scheduler] Automação iniciada — ciclos: 12:00, 16:00, 00:01 BRT | atrasados: a cada 5 min")
 
 
 def parar():

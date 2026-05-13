@@ -119,6 +119,17 @@ def registrar_ciclo_log(tipo: str, total: int, sucesso: int, erros: int, periodo
     }).execute()
 
 
+def registrar_atrasado(protocolo: str, nome_contato: str, departamento: str, tempo_espera_segundos: int) -> None:
+    from datetime import datetime
+    _get_client().table("atendimentos_atrasados_log").insert({
+        "protocolo": protocolo,
+        "nome_contato": nome_contato,
+        "departamento": departamento,
+        "tempo_espera_segundos": tempo_espera_segundos,
+        "data_hora_alerta": datetime.utcnow().isoformat(),
+    }).execute()
+
+
 def carregar_nomes_internos() -> set[str]:
     """Carrega todos os nomes internos (usuarios + atendentes vinculados) para filtragem."""
     try:

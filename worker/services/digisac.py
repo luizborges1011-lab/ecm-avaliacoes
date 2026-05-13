@@ -58,6 +58,24 @@ def exportar_historico(protocol: str) -> str:
         return resp.content.decode("latin-1")
 
 
+def buscar_chamados_abertos() -> list[dict]:
+    query = {
+        "where": {"isOpen": True},
+        "include": [{"model": "contact", "required": True, "where": {"visible": True}}],
+        "order": [["updatedAt", "DESC"]],
+        "page": 1,
+        "perPage": 100,
+    }
+    resp = httpx.get(
+        f"{BASE_URL}/tickets",
+        headers=_headers(),
+        params={"query": json.dumps(query)},
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data", [])
+
+
 def baixar_midia(url: str) -> bytes:
     resp = httpx.get(url, timeout=60.0, follow_redirects=True)
     resp.raise_for_status()
