@@ -19,9 +19,7 @@ COPY . .
 # Inicializa o Reflex (instala pacotes npm, prepara .web/)
 RUN reflex init
 
-RUN chmod +x start.sh
+# Railway auto-detecta EXPOSE e define PORT=3000
+EXPOSE 3000
 
-# Railway roteia para a porta definida em PORT (auto-detectada do EXPOSE)
-EXPOSE 8000
-
-CMD ["./start.sh"]
+CMD ["reflex", "run", "--env", "prod"]
