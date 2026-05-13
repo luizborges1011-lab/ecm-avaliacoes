@@ -109,6 +109,7 @@ def executar_ciclo_atrasados() -> dict:
         return {"total": 0, "atrasados": 0, "erro": str(e)}
 
     atrasados = 0
+    vistos: set[str] = set()
     for ticket in chamados:
         if not _ticket_atrasado(ticket):
             continue
@@ -118,6 +119,11 @@ def executar_ciclo_atrasados() -> dict:
         contact = ticket.get("contact") or {}
         nome_contato = contact.get("name") or ""
         protocol = str(ticket.get("protocol") or "")
+
+        if protocol in vistos:
+            logger.debug(f"[atrasados] Protocolo {protocol} duplicado na resposta, ignorando.")
+            continue
+        vistos.add(protocol)
         segundos = int(_segundos_espera(ticket.get("updatedAt", "")))
 
         _enviar_alerta_chat(ticket, dept_nome, segundos)
