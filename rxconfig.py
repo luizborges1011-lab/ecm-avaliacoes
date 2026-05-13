@@ -16,6 +16,7 @@ config = rx.Config(
     frontend_port=_port,
     backend_port=_port,
     tailwind=None,
+    show_built_with_reflex=False,
     plugins=[
         SitemapPlugin(),
         RadixThemesPlugin(theme=rx.theme(
