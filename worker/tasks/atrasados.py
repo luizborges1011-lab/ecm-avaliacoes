@@ -7,7 +7,13 @@ atribuído (userId vazio) que ultrapassaram o limite de espera:
   • Demais departamentos:         300s (5 min)
 
 Horário de funcionamento (BRT): 07:45–12:00 e 13:30–17:30.
-Para cada chamado em atraso: envia alerta no Google Chat e registra no Supabase.
+
+Janelas de pausa (supressão por-ticket baseada em updatedAt):
+  • Almoço 12:00–13:30 → grace de 5 min: notifica só após 13:35.
+  • Fora do expediente 17:30–08:00 → grace de 5 min: notifica só após 08:05.
+
+Para cada chamado em atraso fora das janelas: envia alerta no Google Chat
+e registra no Supabase.
 """
 import os
 import logging
@@ -55,6 +61,45 @@ def _segundos_espera(updated_at: str) -> float:
         return (datetime.now(timezone.utc) - dt).total_seconds()
     except Exception:
         return 0.0
+
+
+def _inicio_espera_brt(ticket: dict) -> datetime | None:
+    """Retorna o momento em que o ticket entrou em aguardo (horário BRT)."""
+    updated_at = ticket.get("updatedAt", "")
+    try:
+        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        return dt.astimezone(BRT)
+    except Exception:
+        return None
+
+
+def _em_janela_pausa(inicio_brt: datetime, agora_brt: datetime) -> bool:
+    """
+    Retorna True se a notificação deve ser suprimida porque o ticket entrou
+    em aguardo durante uma janela de pausa e o período de grace ainda não passou.
+
+    Regra almoço   — iniciou entre 12:00 e 13:30: suprimir até 13:35.
+    Regra expediente — iniciou após 17:30 ou antes 08:00: suprimir até 08:05.
+    """
+    inicio_min = inicio_brt.hour * 60 + inicio_brt.minute
+    agora_min  = agora_brt.hour  * 60 + agora_brt.minute
+    diff_dias  = (agora_brt.date() - inicio_brt.date()).days
+
+    # Almoço: iniciou entre 12:00 (720 min) e 13:30 (810 min) no mesmo dia
+    # Grace termina às 13:35 (815 min)
+    if diff_dias == 0 and 720 <= inicio_min < 810 and agora_min < 815:
+        return True
+
+    # Fora do expediente: iniciou após 17:30 (1050 min) e ainda é antes das 08:05
+    # do dia seguinte (diff_dias entre 1 e 3 cobre fins de semana/feriados curtos)
+    if inicio_min >= 1050 and 1 <= diff_dias <= 3 and agora_min < 485:
+        return True
+
+    # Madrugada: iniciou antes das 08:00 (480 min) no mesmo dia
+    if diff_dias == 0 and inicio_min < 480 and agora_min < 485:
+        return True
+
+    return False
 
 
 def _ticket_atrasado(ticket: dict) -> bool:
@@ -134,6 +179,14 @@ def executar_ciclo_atrasados() -> dict:
         if protocol in ja_alertados:
             logger.debug(f"[atrasados] {protocol} já alertado recentemente, ignorando.")
             continue
+
+        # Verifica se o ticket entrou em aguardo durante janela de pausa
+        # (almoço 12:00–13:30 com grace até 13:35, ou fora do expediente com grace até 08:05)
+        inicio_brt = _inicio_espera_brt(ticket)
+        if inicio_brt and _em_janela_pausa(inicio_brt, datetime.now(BRT)):
+            logger.debug(f"[atrasados] {protocol} suprimido — iniciou em janela de pausa ({inicio_brt.strftime('%H:%M')}).")
+            continue
+
         segundos = int(_segundos_espera(ticket.get("updatedAt", "")))
 
         _enviar_alerta_chat(ticket, dept_nome, segundos)
