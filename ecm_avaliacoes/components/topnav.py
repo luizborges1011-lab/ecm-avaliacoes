@@ -42,6 +42,7 @@ def nav_item(label: str, icon: str, href: str) -> rx.Component:
             padding="6px 12px",
             border_radius="8px",
             background=rx.cond(is_active, ACTIVE_BG, "transparent"),
+            custom_attrs={"data-navhref": href},
             style={
                 "_hover": {"background": rx.cond(is_active, ACTIVE_BG, HOVER_BG), "cursor": "pointer"},
                 "transition": "background 0.15s ease",
@@ -53,7 +54,8 @@ def nav_item(label: str, icon: str, href: str) -> rx.Component:
 
 
 def topnav() -> rx.Component:
-    return rx.box(
+    return rx.fragment(
+     rx.box(
         rx.flex(
             # Logo
             rx.flex(
@@ -142,4 +144,6 @@ def topnav() -> rx.Component:
         z_index="100",
         width="100%",
         box_shadow="0 1px 3px rgba(0,0,0,0.06)",
+     ),
+     rx.script(src="/nav_active.js"),
     )
