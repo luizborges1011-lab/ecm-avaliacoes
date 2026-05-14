@@ -592,6 +592,7 @@ class AppState(rx.State):
     current_user_email: str = ""
     current_user_is_admin: bool = False
     current_user_atendente_nome: str = ""
+    is_auth_checking: bool = True
 
     # Login form
     login_email: str = ""
@@ -1186,12 +1187,14 @@ class AppState(rx.State):
         """Guard for pages accessible by all authenticated users."""
         if not self.auth_token or self.auth_token not in _SESSIONS:
             self.auth_token = ""
+            self.is_auth_checking = False
             return rx.redirect("/login")
         session = _SESSIONS[self.auth_token]
         self.current_user_nome = session["nome"]
         self.current_user_email = session["email"]
         self.current_user_is_admin = session["is_admin"]
         self.current_user_atendente_nome = session["atendente_nome"]
+        self.is_auth_checking = False
         yield AppState.carregar_dados
 
     @rx.event
@@ -1199,12 +1202,14 @@ class AppState(rx.State):
         """Guard for admin-only pages."""
         if not self.auth_token or self.auth_token not in _SESSIONS:
             self.auth_token = ""
+            self.is_auth_checking = False
             return rx.redirect("/login")
         session = _SESSIONS[self.auth_token]
         self.current_user_nome = session["nome"]
         self.current_user_email = session["email"]
         self.current_user_is_admin = session["is_admin"]
         self.current_user_atendente_nome = session["atendente_nome"]
+        self.is_auth_checking = False
         if not self.current_user_is_admin:
             return rx.redirect("/")
         yield AppState.carregar_dados

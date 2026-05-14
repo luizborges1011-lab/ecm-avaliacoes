@@ -19,8 +19,61 @@ def top_bar(title: str = "") -> rx.Component:
     )
 
 
+def _auth_loading_overlay() -> rx.Component:
+    return rx.cond(
+        AppState.is_auth_checking,
+        rx.box(
+            rx.flex(
+                rx.flex(
+                    rx.flex(
+                        rx.box(
+                            style={
+                                "width": "10px",
+                                "height": "10px",
+                                "border_radius": "50%",
+                                "background": f"linear-gradient(135deg, {BRAND_PURPLE}, {BRAND_TEAL})",
+                            }
+                        ),
+                        rx.text(
+                            "ECM",
+                            weight="bold",
+                            size="5",
+                            style={
+                                "background": f"linear-gradient(135deg, {BRAND_PURPLE}, {BRAND_TEAL})",
+                                "background_clip": "text",
+                                "-webkit-background-clip": "text",
+                                "color": "transparent",
+                            },
+                        ),
+                        align="center",
+                        gap="2",
+                        margin_bottom="24px",
+                    ),
+                    rx.spinner(size="3", color_scheme="violet"),
+                    direction="column",
+                    align="center",
+                    gap="0",
+                ),
+                align="center",
+                justify="center",
+                width="100%",
+                height="100vh",
+            ),
+            position="fixed",
+            top="0",
+            left="0",
+            width="100%",
+            height="100%",
+            background_color="white",
+            z_index="9999",
+        ),
+        rx.box(),
+    )
+
+
 def page_layout(content: rx.Component, title: str = "") -> rx.Component:
     return rx.box(
+        _auth_loading_overlay(),
         rx.toast.provider(),
         rx.cond(
             ~AppState.tv_mode,
