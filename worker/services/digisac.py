@@ -3,19 +3,12 @@ import os
 import httpx
 from datetime import datetime
 
-BASE_URL = os.getenv("DIGISAC_BASE_URL", "https://contabilmadruga.digisac.me/api/v1")
-TOKEN = os.getenv("DIGISAC_TOKEN", "")
-
-_HEADERS = {
-    "Authorization": f"Bearer {TOKEN}",
-    "Content-Type": "application/json",
-}
+BASE_URL = os.getenv("DIGISAC_BASE_URL", "")
 
 
 def _headers() -> dict:
-    token = os.getenv("DIGISAC_TOKEN", TOKEN)
     return {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {os.getenv('DIGISAC_TOKEN', '')}",
         "Content-Type": "application/json",
     }
 

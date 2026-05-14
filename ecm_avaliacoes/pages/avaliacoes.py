@@ -20,11 +20,18 @@ def table_row(av: AvaliacaoItem) -> rx.Component:
         ),
         rx.table.cell(rx.text(av.cliente, size="2", weight="medium", color="#1E293B")),
         rx.table.cell(
-            rx.flex(
-                rx.avatar(fallback=av.responsavel[:2], size="1", color_scheme="violet"),
-                rx.text(av.responsavel, size="2", color="#374151"),
-                align="center",
-                gap="2",
+            rx.cond(
+                av.responsavel == "Não identificado",
+                rx.flex(
+                    rx.icon("user-x", size=14, color="#F59E0B"),
+                    rx.text(av.responsavel, size="2", color="#F59E0B", weight="medium"),
+                    align="center", gap="2",
+                ),
+                rx.flex(
+                    rx.avatar(fallback=av.responsavel[:2], size="1", color_scheme="violet"),
+                    rx.text(av.responsavel, size="2", color="#374151"),
+                    align="center", gap="2",
+                ),
             )
         ),
         rx.table.cell(
@@ -36,13 +43,39 @@ def table_row(av: AvaliacaoItem) -> rx.Component:
             )
         ),
         rx.table.cell(
-            rx.match(
-                av.status,
-                ("Excelente", rx.badge("Excelente", color_scheme="green", variant="soft")),
-                ("Bom", rx.badge("Bom", color_scheme="violet", variant="soft")),
-                ("Regular", rx.badge("Regular", color_scheme="orange", variant="soft")),
-                ("Crítico", rx.badge("Crítico", color_scheme="red", variant="soft")),
-                rx.badge(av.status, variant="soft"),
+            rx.flex(
+                rx.match(
+                    av.status,
+                    ("Excelente", rx.badge("Excelente", color_scheme="green", variant="soft")),
+                    ("Bom", rx.badge("Bom", color_scheme="violet", variant="soft")),
+                    ("Regular", rx.badge("Regular", color_scheme="orange", variant="soft")),
+                    ("Crítico", rx.badge("Crítico", color_scheme="red", variant="soft")),
+                    rx.badge(av.status, variant="soft"),
+                ),
+                rx.cond(
+                    av.justificativa_revisao != "",
+                    rx.tooltip(
+                        rx.badge(
+                            rx.icon("pencil-line", size=10),
+                            AppState.config_etiqueta_revisao_nome,
+                            color_scheme=AppState.config_etiqueta_revisao_cor,
+                            variant="soft",
+                            style={"gap": "4px"},
+                        ),
+                        content="Nota revisada: " + av.justificativa_revisao,
+                    ),
+                    rx.box(),
+                ),
+                rx.cond(
+                    av.conferido,
+                    rx.tooltip(
+                        rx.icon("circle-check", size=14, color="#22C55E"),
+                        content="Atestado por " + av.conferido_por,
+                    ),
+                    rx.box(),
+                ),
+                align="center",
+                gap="2",
             )
         ),
         rx.table.cell(rx.text(av.tempo_formatado, size="2", color="#64748B")),
@@ -60,52 +93,97 @@ def table_row(av: AvaliacaoItem) -> rx.Component:
     )
 
 
+def _flabel(text: str) -> rx.Component:
+    return rx.text(text, size="1", color="#64748B", weight="medium")
+
+
 def filters_bar() -> rx.Component:
     return rx.flex(
-        rx.input(
-            rx.input.slot(rx.icon("search", size=15, color="#94A3B8")),
-            placeholder="Buscar protocolo, cliente ou atendente...",
-            value=AppState.search_query,
-            on_change=AppState.set_search,
-            width="320px",
-            style={"background_color": "white"},
+        rx.flex(
+            _flabel("Buscar"),
+            rx.input(
+                rx.input.slot(rx.icon("search", size=15, color="#94A3B8")),
+                placeholder="Protocolo, cliente ou atendente...",
+                value=AppState.search_query,
+                on_change=AppState.set_search,
+                width="300px",
+                style={"background_color": "white"},
+            ),
+            direction="column", gap="1",
         ),
-        rx.select(
-            AppState.meses_disponiveis,
-            placeholder="Mês",
-            value=AppState.filter_mes,
-            on_change=AppState.set_filter_mes,
-            width="130px",
+        rx.flex(
+            _flabel("Mês"),
+            rx.select(
+                AppState.meses_com_todos,
+                value=AppState.filter_mes_display,
+                on_change=AppState.set_filter_mes,
+                width="130px",
+            ),
+            direction="column", gap="1",
         ),
-        rx.select(
-            ["Excelente", "Bom", "Regular", "Crítico"],
-            placeholder="Status",
-            value=AppState.filter_status,
-            on_change=AppState.set_filter_status,
-            width="160px",
+        rx.flex(
+            _flabel("Status"),
+            rx.select(
+                ["Todos", "Excelente", "Bom", "Regular", "Crítico"],
+                value=AppState.filter_status_display,
+                on_change=AppState.set_filter_status,
+                width="150px",
+            ),
+            direction="column", gap="1",
+        ),
+        rx.flex(
+            _flabel("Conferência"),
+            rx.select(
+                ["Todos", "Atestado", "Pendente"],
+                value=AppState.filter_conferido_display,
+                on_change=AppState.set_filter_conferido,
+                width="140px",
+            ),
+            direction="column", gap="1",
+        ),
+        rx.flex(
+            _flabel("Revisão"),
+            rx.select(
+                ["Todos", "Revisados", "Sem revisão"],
+                value=AppState.filter_revisado_display,
+                on_change=AppState.set_filter_revisado,
+                width="140px",
+            ),
+            direction="column", gap="1",
         ),
         rx.cond(
             AppState.current_user_is_admin,
-            rx.select(
-                AppState.atendentes_nomes,
-                placeholder="Atendente",
-                value=AppState.filter_responsavel,
-                on_change=AppState.set_filter_responsavel,
-                width="220px",
+            rx.flex(
+                _flabel("Atendente"),
+                rx.select(
+                    AppState.atendentes_com_todos,
+                    value=AppState.filter_responsavel_display,
+                    on_change=AppState.set_filter_responsavel,
+                    width="190px",
+                ),
+                direction="column", gap="1",
             ),
             rx.box(),
         ),
-        rx.button(
-            rx.icon("x", size=14), "Limpar",
-            variant="ghost", color_scheme="gray", size="2",
-            on_click=AppState.clear_filters,
+        rx.flex(
+            rx.box(height="16px"),
+            rx.button(
+                rx.icon("x", size=14), "Limpar",
+                variant="ghost", color_scheme="gray", size="2",
+                on_click=AppState.clear_filters,
+            ),
+            direction="column", gap="1",
         ),
         rx.flex(flex="1"),
-        rx.button(
-            rx.icon("download", size=14), "Exportar CSV",
-            variant="outline", color_scheme="violet", size="2",
+        rx.flex(
+            rx.box(height="16px"),
+            rx.button(
+                rx.icon("download", size=14), "Exportar CSV",
+                variant="outline", color_scheme="violet", size="2",
+            ),
+            direction="column", gap="1",
         ),
-        align="center",
+        align="end",
         gap="3",
         padding="16px 0",
         flex_wrap="wrap",
@@ -436,6 +514,49 @@ def desconsiderar_dialog() -> rx.Component:
     )
 
 
+def vincular_atendente_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Vincular Atendente"),
+            rx.text(
+                "Selecione o atendente responsável por este atendimento. A alteração será salva no banco de dados e os relatórios serão atualizados.",
+                size="2", color="#64748B",
+            ),
+            rx.flex(
+                rx.text("Protocolo:", size="2", weight="medium", color="#374151"),
+                rx.text(AppState.selected_avaliacao.protocolo, size="2", color="#7700FF", font_family="monospace"),
+                gap="2", align="center", margin_top="3",
+            ),
+            rx.flex(
+                rx.text("Atendente", size="1", color="#64748B", weight="medium"),
+                rx.select(
+                    AppState.atendentes_identificados,
+                    placeholder="Selecione um atendente...",
+                    value=AppState.vincular_atendente_selecionado,
+                    on_change=AppState.set_vincular_atendente_selecionado,
+                    width="100%",
+                ),
+                direction="column", gap="1", margin_top="4", width="100%",
+            ),
+            rx.flex(
+                rx.button(
+                    "Cancelar", variant="outline", color_scheme="gray",
+                    on_click=AppState.fechar_vincular_atendente,
+                ),
+                rx.button(
+                    rx.icon("user-check", size=14), "Confirmar vínculo",
+                    color_scheme="violet",
+                    on_click=AppState.confirmar_vincular_atendente,
+                ),
+                gap="3", justify="end", margin_top="5",
+            ),
+            max_width="420px",
+        ),
+        open=AppState.show_vincular_atendente,
+        on_open_change=AppState.close_vincular_atendente,
+    )
+
+
 def avaliacao_modal() -> rx.Component:
     av = AppState.selected_avaliacao
     return rx.dialog.root(
@@ -543,6 +664,40 @@ def avaliacao_modal() -> rx.Component:
                     padding_top="20px", border_top="1px solid #F1F5F9", margin_top="16px",
                 ),
                 rx.flex(
+                    rx.cond(
+                        AppState.current_user_is_admin & AppState.selected_precisa_conferencia,
+                        rx.cond(
+                            AppState.selected_avaliacao.conferido,
+                            rx.flex(
+                                rx.icon("circle-check", size=14, color="#22C55E"),
+                                rx.text(
+                                    "Atestado por " + AppState.selected_avaliacao.conferido_por,
+                                    size="2", color="#22C55E", weight="medium",
+                                ),
+                                align="center", gap="2",
+                                padding="6px 12px",
+                                background="#F0FDF4",
+                                border="1px solid #BBF7D0",
+                                border_radius="6px",
+                            ),
+                            rx.button(
+                                rx.icon("shield-check", size=14), "Atestar",
+                                variant="outline", color_scheme="green", size="2",
+                                on_click=AppState.marcar_conferido,
+                            ),
+                        ),
+                        rx.box(),
+                    ),
+                    rx.cond(
+                        AppState.current_user_is_admin & AppState.selected_e_nao_identificado,
+                        rx.button(
+                            rx.icon("user-plus", size=14), "Vincular Atendente",
+                            variant="outline", color_scheme="orange", size="2",
+                            on_click=AppState.open_vincular_atendente,
+                        ),
+                        rx.box(),
+                    ),
+                    rx.flex(flex="1"),
                     rx.button(
                         rx.icon("pencil", size=14), "Revisar Nota",
                         variant="outline", color_scheme="violet", size="2",
@@ -556,7 +711,7 @@ def avaliacao_modal() -> rx.Component:
                     rx.dialog.close(
                         rx.button("Fechar", variant="soft", color_scheme="gray", size="2"),
                     ),
-                    gap="3", justify="end",
+                    gap="3", align="center",
                     padding_top="20px", border_top="1px solid #F1F5F9", margin_top="16px",
                 ),
             ),
@@ -599,6 +754,7 @@ def avaliacoes_content() -> rx.Component:
         ),
         avaliacao_modal(),
         desconsiderar_dialog(),
+        vincular_atendente_dialog(),
         direction="column",
         gap="0",
         width="100%",

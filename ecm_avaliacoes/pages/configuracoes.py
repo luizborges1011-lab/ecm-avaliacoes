@@ -3,6 +3,33 @@ from ecm_avaliacoes.components import page_layout
 from ecm_avaliacoes.state import AppState
 
 
+def _swatch(scheme: str, hex_color: str) -> rx.Component:
+    selected = AppState.config_etiqueta_revisao_cor == scheme
+    return rx.box(
+        rx.cond(
+            selected,
+            rx.icon("check", size=13, color="white"),
+            rx.box(),
+        ),
+        background_color=hex_color,
+        width="28px",
+        height="28px",
+        min_width="28px",
+        border_radius="6px",
+        cursor="pointer",
+        display="flex",
+        align_items="center",
+        justify_content="center",
+        on_click=AppState.set_config_etiqueta_revisao_cor(scheme),
+        style={
+            "outline": rx.cond(selected, f"3px solid {hex_color}", "3px solid transparent"),
+            "outline_offset": "2px",
+            "transition": "outline 0.1s ease, transform 0.1s ease",
+            "_hover": {"transform": "scale(1.18)"},
+        },
+    )
+
+
 def config_section(title: str, description: str, content: rx.Component) -> rx.Component:
     return rx.card(
         rx.flex(
@@ -282,6 +309,66 @@ def tab_avaliacao() -> rx.Component:
                         align="center", gap="2",
                     ),
                     justify="between", align="center",
+                ),
+                direction="column", gap="4",
+            ),
+        ),
+        config_section(
+            "Etiqueta de Revisão",
+            "Badge exibido nas avaliações que tiveram nota revisada ou justificativa preenchida.",
+            rx.flex(
+                rx.flex(
+                    rx.text("Nome da etiqueta", size="2", weight="medium", color="#374151"),
+                    rx.input(
+                        placeholder="Ex: Revisado",
+                        value=AppState.config_etiqueta_revisao_nome,
+                        on_change=AppState.set_config_etiqueta_revisao_nome,
+                        width="200px",
+                    ),
+                    justify="between", align="center",
+                ),
+                rx.flex(
+                    rx.flex(
+                        rx.text("Cor da etiqueta", size="2", weight="medium", color="#374151"),
+                        rx.badge(
+                            rx.icon("pencil-line", size=10),
+                            AppState.config_etiqueta_revisao_nome,
+                            color_scheme=AppState.config_etiqueta_revisao_cor,
+                            variant="soft",
+                            style={"gap": "4px"},
+                        ),
+                        align="center", gap="3",
+                    ),
+                    rx.flex(
+                        # Row 1: warm tones
+                        _swatch("red",     "#EF4444"),
+                        _swatch("tomato",  "#E54D2E"),
+                        _swatch("orange",  "#F97316"),
+                        _swatch("amber",   "#F59E0B"),
+                        _swatch("yellow",  "#EAB308"),
+                        # Row 2: greens/blues
+                        _swatch("lime",    "#84CC16"),
+                        _swatch("green",   "#22C55E"),
+                        _swatch("teal",    "#14B8A6"),
+                        _swatch("cyan",    "#06B6D4"),
+                        _swatch("sky",     "#0EA5E9"),
+                        # Row 3: purples/pinks
+                        _swatch("blue",    "#3B82F6"),
+                        _swatch("indigo",  "#6366F1"),
+                        _swatch("violet",  "#7700FF"),
+                        _swatch("purple",  "#9333EA"),
+                        _swatch("pink",    "#EC4899"),
+                        # Row 4: neutrals
+                        _swatch("crimson", "#DB2777"),
+                        _swatch("brown",   "#B45309"),
+                        _swatch("bronze",  "#8B6351"),
+                        _swatch("gold",    "#B7860B"),
+                        _swatch("gray",    "#94A3B8"),
+                        flex_wrap="wrap",
+                        gap="2",
+                        max_width="200px",
+                    ),
+                    justify="between", align="start",
                 ),
                 direction="column", gap="4",
             ),

@@ -1,12 +1,24 @@
 import os
 import re
 import secrets
+import unicodedata
 import reflex as rx
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from worker.services.ai_service import PROMPT_AVALIACAO
 
 load_dotenv()
+
+
+def _normalizar_setor(setor: str) -> str:
+    """Strip accents and lowercase for deduplication comparisons."""
+    s = unicodedata.normalize("NFD", setor.lower().strip())
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _tem_acento(texto: str) -> bool:
+    return any(ord(c) > 127 for c in texto)
+
 
 # Session store: token → {nome, email, is_admin, atendente_nome}
 _SESSIONS: dict[str, dict] = {}
@@ -35,6 +47,8 @@ class AvaliacaoItem(BaseModel):
     feedback_final: str = ""
     justificativa_revisao: str = ""
     data_avaliacao: str = ""
+    conferido: bool = False
+    conferido_por: str = ""
 
 
 class MonthlyData(BaseModel):
@@ -76,6 +90,12 @@ class AtrasadoAgrupadoItem(BaseModel):
     setores: str = ""
     protocolos: str = ""
     ultima_data: str = ""
+
+
+class DeptAtrasoItem(BaseModel):
+    setor: str = ""
+    clientes: int = 0
+    ocorrencias: int = 0
 
 
 class CicloLogItem(BaseModel):
@@ -140,7 +160,8 @@ def _carregar_do_supabase() -> list[dict]:
             .select(
                 "id, protocolo, cliente, responsavel, data_atendimento, hora_inicio, "
                 "hora_fim, tempo_minutos, tempo_formatado, nota, status, "
-                "pontos_criticos, feedback_final, justificativa_revisao, data_avaliacao"
+                "pontos_criticos, feedback_final, justificativa_revisao, data_avaliacao, "
+                "conferido, conferido_por"
             )
             .order("data_avaliacao", desc=True)
             .limit(500)
@@ -478,6 +499,33 @@ def _atualizar_nota_supabase(avaliacao_id: int, nova_nota: float, justificativa:
         pass
 
 
+def _vincular_atendente_supabase(avaliacao_id: int, responsavel: str) -> bool:
+    try:
+        client = _supabase_client()
+        if not client:
+            return False
+        client.table("avaliacao").update({"responsavel": responsavel}).eq("id", avaliacao_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def _marcar_conferido_supabase(avaliacao_id: int, usuario: str) -> bool:
+    try:
+        from datetime import datetime
+        client = _supabase_client()
+        if not client:
+            return False
+        client.table("avaliacao").update({
+            "conferido": True,
+            "conferido_por": usuario,
+            "conferido_em": datetime.utcnow().isoformat(),
+        }).eq("id", avaliacao_id).execute()
+        return True
+    except Exception:
+        return False
+
+
 def _dict_to_avaliacao(d: dict) -> "AvaliacaoItem":
     return AvaliacaoItem(
         id=d.get("id", 0),
@@ -495,6 +543,8 @@ def _dict_to_avaliacao(d: dict) -> "AvaliacaoItem":
         feedback_final=d.get("feedback_final", ""),
         justificativa_revisao=d.get("justificativa_revisao", "") or "",
         data_avaliacao=d.get("data_avaliacao", ""),
+        conferido=bool(d.get("conferido", False)),
+        conferido_por=d.get("conferido_por", "") or "",
     )
 
 
@@ -507,7 +557,10 @@ class AppState(rx.State):
     avaliacoes: list[AvaliacaoItem] = []
     selected_avaliacao: AvaliacaoItem = AvaliacaoItem()
     show_drawer: bool = False
+    pending_open_avaliacao_id: int = 0
     show_desconsiderar_confirm: bool = False
+    show_vincular_atendente: bool = False
+    vincular_atendente_selecionado: str = ""
     editando_nota: bool = False
     revisar_nova_nota: str = ""
     revisar_justificativa: str = ""
@@ -518,6 +571,7 @@ class AppState(rx.State):
     audit_logs: list[AuditLogItem] = []
     erros_fila: list[ErroItem] = []
     atendentes: list[AtendenteItem] = []
+    search_atendentes: str = ""
 
     # Users
     usuarios: list[UserItem] = []
@@ -552,6 +606,8 @@ class AppState(rx.State):
     filter_status: str = ""
     filter_responsavel: str = ""
     filter_mes: str = ""
+    filter_conferido: str = ""
+    filter_revisado: str = ""
 
     tv_mode: bool = False
 
@@ -570,11 +626,16 @@ class AppState(rx.State):
     config_nota_excelente: str = "8.0"
     config_nota_bom: str = "6.0"
     config_nota_regular: str = "4.0"
+    config_etiqueta_revisao_nome: str = "Revisado"
+    config_etiqueta_revisao_cor: str = "amber"
 
     # Atendimentos em atraso
     atrasados_log: list[AtrasadoLogItem] = []
     filter_mes_atrasos: str = ""
     atrasos_search: str = ""
+    filter_setor_atrasos: str = ""
+    filter_data_inicio_atrasos: str = ""
+    filter_data_fim_atrasos: str = ""
 
     # Histórico de ciclos de automação
     ciclos_log: list[CicloLogItem] = []
@@ -751,6 +812,14 @@ class AppState(rx.State):
             result = [a for a in result if a.status == self.filter_status]
         if self.filter_responsavel:
             result = [a for a in result if a.responsavel == self.filter_responsavel]
+        if self.filter_conferido == "Atestado":
+            result = [a for a in result if a.conferido]
+        elif self.filter_conferido == "Pendente":
+            result = [a for a in result if not a.conferido and a.status in ("Regular", "Crítico")]
+        if self.filter_revisado == "Revisados":
+            result = [a for a in result if a.justificativa_revisao != ""]
+        elif self.filter_revisado == "Sem revisão":
+            result = [a for a in result if a.justificativa_revisao == ""]
         return result
 
 
@@ -759,8 +828,52 @@ class AppState(rx.State):
         return sorted(list(set(a.responsavel for a in self.avaliacoes)))
 
     @rx.var
+    def meses_com_todos(self) -> list[str]:
+        return ["Todos"] + self.meses_disponiveis
+
+    @rx.var
+    def atendentes_com_todos(self) -> list[str]:
+        return ["Todos"] + self.atendentes_nomes
+
+    @rx.var
+    def atendentes_identificados(self) -> list[str]:
+        return sorted([
+            n for n in set(a.responsavel for a in self.avaliacoes)
+            if n and "identificado" not in n.lower()
+        ])
+
+    @rx.var
+    def selected_e_nao_identificado(self) -> bool:
+        r = self.selected_avaliacao.responsavel
+        return not r or "identificado" in r.lower()
+
+    @rx.var
+    def filter_mes_display(self) -> str:
+        return self.filter_mes if self.filter_mes else "Todos"
+
+    @rx.var
+    def filter_status_display(self) -> str:
+        return self.filter_status if self.filter_status else "Todos"
+
+    @rx.var
+    def filter_responsavel_display(self) -> str:
+        return self.filter_responsavel if self.filter_responsavel else "Todos"
+
+    @rx.var
+    def filter_conferido_display(self) -> str:
+        return self.filter_conferido if self.filter_conferido else "Todos"
+
+    @rx.var
+    def filter_revisado_display(self) -> str:
+        return self.filter_revisado if self.filter_revisado else "Todos"
+
+    @rx.var
     def avaliacoes_criticas(self) -> list[AvaliacaoItem]:
         return [a for a in self.avaliacoes_visiveis if a.nota < 6.0]
+
+    @rx.var
+    def selected_precisa_conferencia(self) -> bool:
+        return self.selected_avaliacao.status in ("Regular", "Crítico")
 
     @rx.var
     def atendentes_do_mes(self) -> list[AtendenteItem]:
@@ -785,6 +898,40 @@ class AppState(rx.State):
                 nota_media=nota_media,
             ))
         return sorted(result, key=lambda x: x.nota_media, reverse=True)
+
+    @rx.var
+    def atendentes_filtrados(self) -> list[AtendenteItem]:
+        items = self.atendentes_do_mes
+        if self.search_atendentes:
+            q = self.search_atendentes.lower()
+            items = [a for a in items if q in a.nome.lower()]
+        return items
+
+    @rx.var
+    def ranking_volume_data(self) -> list[RankingItem]:
+        stats: dict[str, list] = {}
+        for av in self.avaliacoes_visiveis:
+            nome = av.responsavel
+            if nome not in stats:
+                stats[nome] = []
+            stats[nome].append(av.nota)
+        items = sorted(
+            [
+                {
+                    "nome": k,
+                    "nota": round(sum(v) / len(v), 1),
+                    "total": len(v),
+                    "aprovados": sum(1 for n in v if n >= 7.0),
+                }
+                for k, v in stats.items()
+            ],
+            key=lambda x: x["total"],
+            reverse=True,
+        )
+        return [
+            RankingItem(posicao=i + 1, nome=x["nome"], nota=x["nota"], total=x["total"], aprovados=x["aprovados"])
+            for i, x in enumerate(items[:7])
+        ]
 
     @rx.var
     def avaliacoes_do_atendente(self) -> list[AvaliacaoItem]:
@@ -825,6 +972,19 @@ class AppState(rx.State):
     def atrasados_do_mes(self) -> list[AtrasadoLogItem]:
         if not self.filter_mes_atrasos:
             return self.atrasados_log
+        if self.filter_mes_atrasos == "Personalizado":
+            inicio = self.filter_data_inicio_atrasos
+            fim = self.filter_data_fim_atrasos
+            result = []
+            for item in self.atrasados_log:
+                ts = item.criado_em
+                if ts and len(ts) >= 10:
+                    date_str = ts[:10]
+                    ok_inicio = (not inicio) or date_str >= inicio
+                    ok_fim = (not fim) or date_str <= fim
+                    if ok_inicio and ok_fim:
+                        result.append(item)
+            return result
         result = []
         for item in self.atrasados_log:
             ts = item.criado_em
@@ -834,9 +994,68 @@ class AppState(rx.State):
         return result
 
     @rx.var
-    def atrasados_agrupados(self) -> list[AtrasadoAgrupadoItem]:
+    def usar_periodo_personalizado(self) -> bool:
+        return self.filter_mes_atrasos == "Personalizado"
+
+    @rx.var
+    def meses_atrasos_com_todos(self) -> list[str]:
+        return ["Todos", "Personalizado"] + self.meses_disponiveis_atrasos
+
+    @rx.var
+    def filter_mes_atrasos_display(self) -> str:
+        return self.filter_mes_atrasos if self.filter_mes_atrasos else "Todos"
+
+    @rx.var
+    def setores_disponiveis_atrasos(self) -> list[str]:
         grupos: dict = {}
+        for item in self.atrasados_log:
+            if item.setor:
+                norm = _normalizar_setor(item.setor)
+                if norm not in grupos:
+                    grupos[norm] = item.setor
+                elif _tem_acento(item.setor) and not _tem_acento(grupos[norm]):
+                    grupos[norm] = item.setor
+        return sorted(grupos.values())
+
+    @rx.var
+    def setores_com_todos_atrasos(self) -> list[str]:
+        return ["Todos"] + self.setores_disponiveis_atrasos
+
+    @rx.var
+    def filter_setor_atrasos_display(self) -> str:
+        return self.filter_setor_atrasos if self.filter_setor_atrasos else "Todos"
+
+    @rx.var
+    def atrasos_por_departamento(self) -> list[DeptAtrasoItem]:
+        dept_canonical: dict = {}
+        dept_clientes: dict = {}
+        dept_ocorrencias: dict = {}
         for item in self.atrasados_do_mes:
+            setor = item.setor if item.setor else "Não informado"
+            norm = _normalizar_setor(setor)
+            if norm not in dept_clientes:
+                dept_canonical[norm] = setor
+                dept_clientes[norm] = []
+                dept_ocorrencias[norm] = 0
+            elif _tem_acento(setor) and not _tem_acento(dept_canonical[norm]):
+                dept_canonical[norm] = setor
+            if item.cliente not in dept_clientes[norm]:
+                dept_clientes[norm].append(item.cliente)
+            dept_ocorrencias[norm] += 1
+        result = [
+            DeptAtrasoItem(setor=dept_canonical[n], clientes=len(dept_clientes[n]), ocorrencias=dept_ocorrencias[n])
+            for n in dept_clientes
+        ]
+        return sorted(result, key=lambda x: x.ocorrencias, reverse=True)
+
+    @rx.var
+    def atrasados_agrupados(self) -> list[AtrasadoAgrupadoItem]:
+        base = self.atrasados_do_mes
+        if self.filter_setor_atrasos:
+            norm_filter = _normalizar_setor(self.filter_setor_atrasos)
+            base = [item for item in base if _normalizar_setor(item.setor) == norm_filter]
+        grupos: dict = {}
+        for item in base:
             cliente = item.cliente.strip() if item.cliente.strip() else "Não identificado"
             if cliente not in grupos:
                 grupos[cliente] = {"count": 0, "setores": [], "protocolos": [], "ultima": ""}
@@ -1035,6 +1254,11 @@ class AppState(rx.State):
                 return AppState.carregar_historico
 
     @rx.event
+    def navegar_para_avaliacao(self, avaliacao_id: int):
+        self.pending_open_avaliacao_id = avaliacao_id
+        return rx.redirect("/avaliacoes")
+
+    @rx.event
     def close_drawer(self, open: bool = False):
         if not open:
             self.show_drawer = False
@@ -1095,6 +1319,8 @@ class AppState(rx.State):
                     pontos_criticos=av.pontos_criticos, feedback_final=av.feedback_final,
                     justificativa_revisao=justificativa,
                     data_avaliacao=av.data_avaliacao,
+                    conferido=av.conferido,
+                    conferido_por=av.conferido_por,
                 )
                 break
         if updated is None:
@@ -1107,6 +1333,84 @@ class AppState(rx.State):
         self.revisar_nova_nota = ""
         self.revisar_justificativa = ""
 
+    @rx.event
+    def marcar_conferido(self):
+        av = self.selected_avaliacao
+        if not av.id or av.conferido:
+            return
+        usuario = self.current_user_nome
+        _marcar_conferido_supabase(av.id, usuario)
+        _registrar_audit_supabase(
+            usuario=usuario,
+            acao="Avaliação atestada",
+            entidade_id=av.protocolo,
+            detalhes=f"Conferido por {usuario} sem alteração de nota",
+        )
+        updated = AvaliacaoItem(
+            id=av.id, protocolo=av.protocolo, cliente=av.cliente,
+            responsavel=av.responsavel, data_atendimento=av.data_atendimento,
+            hora_inicio=av.hora_inicio, hora_fim=av.hora_fim,
+            tempo_minutos=av.tempo_minutos, tempo_formatado=av.tempo_formatado,
+            nota=av.nota, status=av.status,
+            pontos_criticos=av.pontos_criticos, feedback_final=av.feedback_final,
+            justificativa_revisao=av.justificativa_revisao,
+            data_avaliacao=av.data_avaliacao,
+            conferido=True,
+            conferido_por=usuario,
+        )
+        self.avaliacoes = [updated if a.id == av.id else a for a in self.avaliacoes]
+        self.selected_avaliacao = updated
+
+    @rx.event
+    def open_vincular_atendente(self):
+        self.vincular_atendente_selecionado = ""
+        self.show_vincular_atendente = True
+
+    @rx.event
+    def fechar_vincular_atendente(self):
+        self.show_vincular_atendente = False
+        self.vincular_atendente_selecionado = ""
+
+    @rx.event
+    def close_vincular_atendente(self, open: bool = False):
+        if not open:
+            self.show_vincular_atendente = False
+            self.vincular_atendente_selecionado = ""
+
+    @rx.event
+    def set_vincular_atendente_selecionado(self, value: str):
+        self.vincular_atendente_selecionado = value
+
+    @rx.event
+    def confirmar_vincular_atendente(self):
+        if not self.vincular_atendente_selecionado:
+            return
+        av = self.selected_avaliacao
+        novo = self.vincular_atendente_selecionado
+        _vincular_atendente_supabase(av.id, novo)
+        _registrar_audit_supabase(
+            usuario=self.current_user_nome,
+            acao="Atendente vinculado",
+            entidade_id=av.protocolo,
+            detalhes=f"Atendente vinculado: {novo} (era: Não identificado)",
+        )
+        updated = AvaliacaoItem(
+            id=av.id, protocolo=av.protocolo, cliente=av.cliente,
+            responsavel=novo, data_atendimento=av.data_atendimento,
+            hora_inicio=av.hora_inicio, hora_fim=av.hora_fim,
+            tempo_minutos=av.tempo_minutos, tempo_formatado=av.tempo_formatado,
+            nota=av.nota, status=av.status,
+            pontos_criticos=av.pontos_criticos, feedback_final=av.feedback_final,
+            justificativa_revisao=av.justificativa_revisao,
+            data_avaliacao=av.data_avaliacao,
+            conferido=av.conferido,
+            conferido_por=av.conferido_por,
+        )
+        self.avaliacoes = [updated if a.id == av.id else a for a in self.avaliacoes]
+        self.selected_avaliacao = updated
+        self.show_vincular_atendente = False
+        self.vincular_atendente_selecionado = ""
+
     # -----------------------------------------------------------------------
     # Filter event handlers
     # -----------------------------------------------------------------------
@@ -1117,11 +1421,23 @@ class AppState(rx.State):
 
     @rx.event
     def set_filter_status(self, value: str):
-        self.filter_status = value
+        self.filter_status = "" if value == "Todos" else value
 
     @rx.event
     def set_filter_responsavel(self, value: str):
-        self.filter_responsavel = value
+        self.filter_responsavel = "" if value == "Todos" else value
+
+    @rx.event
+    def set_filter_conferido(self, value: str):
+        self.filter_conferido = "" if value == "Todos" else value
+
+    @rx.event
+    def set_filter_revisado(self, value: str):
+        self.filter_revisado = "" if value == "Todos" else value
+
+    @rx.event
+    def set_search_atendentes(self, value: str):
+        self.search_atendentes = value
 
     @rx.event
     def set_mes_atual(self):
@@ -1131,7 +1447,7 @@ class AppState(rx.State):
 
     @rx.event
     def set_filter_mes(self, value: str):
-        self.filter_mes = value
+        self.filter_mes = "" if value == "Todos" else value
 
     @rx.event
     def open_atendente(self, nome: str):
@@ -1149,19 +1465,36 @@ class AppState(rx.State):
         self.filter_status = ""
         self.filter_responsavel = ""
         self.filter_mes = ""
+        self.filter_conferido = ""
+        self.filter_revisado = ""
 
     @rx.event
     def set_filter_mes_atrasos(self, value: str):
-        self.filter_mes_atrasos = value
+        self.filter_mes_atrasos = "" if value == "Todos" else value
 
     @rx.event
     def set_atrasos_search(self, value: str):
         self.atrasos_search = value
 
     @rx.event
+    def set_filter_setor_atrasos(self, value: str):
+        self.filter_setor_atrasos = "" if value == "Todos" else value
+
+    @rx.event
+    def set_filter_data_inicio_atrasos(self, value: str):
+        self.filter_data_inicio_atrasos = value
+
+    @rx.event
+    def set_filter_data_fim_atrasos(self, value: str):
+        self.filter_data_fim_atrasos = value
+
+    @rx.event
     def clear_atrasos_filters(self):
         self.filter_mes_atrasos = ""
         self.atrasos_search = ""
+        self.filter_setor_atrasos = ""
+        self.filter_data_inicio_atrasos = ""
+        self.filter_data_fim_atrasos = ""
 
     @rx.event
     def toggle_tv_mode(self):
@@ -1314,6 +1647,8 @@ class AppState(rx.State):
             "nota_bom": self.config_nota_bom,
             "nota_regular": self.config_nota_regular,
             "prompt_avaliacao": self.config_prompt_avaliacao,
+            "etiqueta_revisao_nome": self.config_etiqueta_revisao_nome,
+            "etiqueta_revisao_cor": self.config_etiqueta_revisao_cor,
         })
         self.config_prompt_editando = False
         self.config_prompt_backup = ""
@@ -1336,12 +1671,22 @@ class AppState(rx.State):
         self.config_nota_regular = value
 
     @rx.event
+    def set_config_etiqueta_revisao_nome(self, value: str):
+        self.config_etiqueta_revisao_nome = value
+
+    @rx.event
+    def set_config_etiqueta_revisao_cor(self, value: str):
+        self.config_etiqueta_revisao_cor = value
+
+    @rx.event
     def salvar_configuracoes(self):
         _salvar_config_supabase({
             "nota_excelente": self.config_nota_excelente,
             "nota_bom": self.config_nota_bom,
             "nota_regular": self.config_nota_regular,
             "prompt_avaliacao": self.config_prompt_avaliacao,
+            "etiqueta_revisao_nome": self.config_etiqueta_revisao_nome,
+            "etiqueta_revisao_cor": self.config_etiqueta_revisao_cor,
         })
 
     @rx.event(background=True)
@@ -1408,6 +1753,12 @@ class AppState(rx.State):
             prompt_salvo = config_db.get("prompt_avaliacao", "")
             if prompt_salvo and "{relatorio}" in prompt_salvo:
                 self.config_prompt_avaliacao = prompt_salvo
+            etiqueta_nome = config_db.get("etiqueta_revisao_nome", "")
+            if etiqueta_nome:
+                self.config_etiqueta_revisao_nome = etiqueta_nome
+            etiqueta_cor = config_db.get("etiqueta_revisao_cor", "")
+            if etiqueta_cor:
+                self.config_etiqueta_revisao_cor = etiqueta_cor
 
         dados_db = _carregar_do_supabase()
         if dados_db:
@@ -1460,3 +1811,8 @@ class AppState(rx.State):
 
         ciclos_db = _carregar_ciclos_supabase()
         self.ciclos_log = [_dict_to_ciclo(c) for c in ciclos_db]
+
+        if self.pending_open_avaliacao_id:
+            pending_id = self.pending_open_avaliacao_id
+            self.pending_open_avaliacao_id = 0
+            yield AppState.open_avaliacao(pending_id)

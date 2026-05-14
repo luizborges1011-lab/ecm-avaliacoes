@@ -1,16 +1,14 @@
 """
-Run once to create the 'usuarios' table in Supabase and seed the first admin.
+Run once to create the 'usuarios' table in Supabase.
 
 Usage:
     python setup_admin.py
 
-Default admin credentials (change after first login):
-    Email: luiz.h@ecm.com.br
-    Senha: ECM@2026
+After running, create users via Configurações > Gerenciar Usuários in the app.
+Requires SUPABASE_URL and SUPABASE_SERVICE_KEY in .env.
 """
 import os
 import sys
-import bcrypt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,16 +25,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 """
-
-SEED_USERS = [
-    {"nome": "Luiz Henrique Borges", "email": "luiz.h@ecm.com.br",    "senha": "ECM@2026", "is_admin": True,  "atendente_nome": "Luiz Henrique Borges"},
-    {"nome": "Bruna Madruga",        "email": "bruna@ecm.com.br",      "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Bruna Madruga"},
-    {"nome": "Giulia Detoni",        "email": "giulia@ecm.com.br",     "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Giulia Detoni"},
-    {"nome": "Franciele Favero",     "email": "franciele@ecm.com.br",  "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Franciele Favero"},
-    {"nome": "Simone Chenet",        "email": "simone@ecm.com.br",     "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Simone Chenet"},
-    {"nome": "Thais Seratto",        "email": "thais@ecm.com.br",      "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Thais Seratto"},
-    {"nome": "Naiara Dalmora",       "email": "naiara@ecm.com.br",     "senha": "ECM@2026", "is_admin": False, "atendente_nome": "Naiara Dalmora"},
-]
 
 
 def main():
@@ -58,30 +46,8 @@ def main():
         print(SQL_CREATE)
         print()
 
-    print("Seeding users (skipping existing emails)...")
-    for u in SEED_USERS:
-        try:
-            existing = client.table("usuarios").select("id").eq("email", u["email"]).execute()
-            if existing.data:
-                print(f"  SKIP  {u['email']} (already exists)")
-                continue
-            senha_hash = bcrypt.hashpw(u["senha"].encode(), bcrypt.gensalt()).decode()
-            client.table("usuarios").insert({
-                "nome": u["nome"],
-                "email": u["email"],
-                "senha_hash": senha_hash,
-                "is_admin": u["is_admin"],
-                "ativo": True,
-                "atendente_nome": u["atendente_nome"],
-            }).execute()
-            role = "ADMIN" if u["is_admin"] else "atendente"
-            print(f"  OK    {u['email']} ({role})")
-        except Exception as e:
-            print(f"  ERROR {u['email']}: {e}")
-
     print()
-    print("Done. All users have temporary password: ECM@2026")
-    print("Change passwords after first login via Configurações.")
+    print("Done. Create users via Configurações > Gerenciar Usuários in the app.")
 
 
 if __name__ == "__main__":

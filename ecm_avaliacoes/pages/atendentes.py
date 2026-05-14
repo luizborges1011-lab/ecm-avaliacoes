@@ -201,6 +201,8 @@ def atendentes_content() -> rx.Component:
             rx.input(
                 rx.input.slot(rx.icon("search", size=15, color="#94A3B8")),
                 placeholder="Buscar atendente...",
+                value=AppState.search_atendentes,
+                on_change=AppState.set_search_atendentes,
                 width="260px",
                 style={"background_color": "white"},
             ),
@@ -224,12 +226,6 @@ def atendentes_content() -> rx.Component:
                     rx.box(),
                 ),
                 align="center", gap="2",
-            ),
-            rx.flex(
-                rx.button(
-                    rx.icon("plus", size=14), "Novo Atendente",
-                    color_scheme="violet",
-                ),
             ),
             justify="between", align="center", margin_bottom="5",
             flex_wrap="wrap", gap="3",
@@ -255,9 +251,9 @@ def atendentes_content() -> rx.Component:
         ),
         # Grid de cards
         rx.cond(
-            AppState.atendentes_do_mes.length() > 0,
+            AppState.atendentes_filtrados.length() > 0,
             rx.grid(
-                rx.foreach(AppState.atendentes_do_mes, atendente_card),
+                rx.foreach(AppState.atendentes_filtrados, atendente_card),
                 columns="3",
                 gap="4",
             ),

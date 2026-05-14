@@ -17,6 +17,7 @@ __pycache__/
 celerybeat-schedule
 celerybeat.pid
 *.log
+logs/
 
 # macOS
 .DS_Store

@@ -88,12 +88,27 @@ def alert_item(av: AvaliacaoItem) -> rx.Component:
             gap="3",
             flex="1",
         ),
-        rx.text(av.nota, size="3", color="#EF4444"),
+        rx.flex(
+            rx.text(av.nota, size="3", color="#EF4444"),
+            rx.icon("arrow-right", size=14, color="#EF4444"),
+            align="center",
+            gap="1",
+        ),
         justify="between",
         align="center",
-        padding="10px 0",
+        padding="10px 12px",
         border_bottom="1px solid #FEF2F2",
+        border_radius="8px",
         width="100%",
+        cursor="pointer",
+        on_click=AppState.navegar_para_avaliacao(av.id),
+        style={
+            "_hover": {
+                "background_color": "#FEF2F2",
+                "box_shadow": "0 2px 8px rgba(239,68,68,0.12)",
+            },
+            "transition": "background-color 0.15s ease, box-shadow 0.15s ease",
+        },
     )
 
 
@@ -160,12 +175,48 @@ def chart_section() -> rx.Component:
     )
 
 
+def volume_item(item: RankingItem) -> rx.Component:
+    return rx.flex(
+        rx.flex(
+            rx.text(
+                item.posicao,
+                size="2",
+                weight="bold",
+                color=rx.cond(item.posicao == 1, "#F59E0B", rx.cond(item.posicao <= 3, "#94A3B8", "#CBD5E1")),
+                width="20px",
+                text_align="center",
+            ),
+            rx.avatar(fallback=item.nome[:2], size="2", color_scheme="teal"),
+            rx.flex(
+                rx.text(item.nome, size="2", weight="medium", color="#1E293B"),
+                rx.text("média ", item.nota, "/10", size="1", color="#94A3B8"),
+                direction="column",
+                gap="0",
+            ),
+            align="center",
+            gap="3",
+            flex="1",
+        ),
+        rx.flex(
+            rx.text(item.total, size="3", color="#0D9488"),
+            rx.text(" chams.", size="1", color="#94A3B8"),
+            align="baseline",
+            gap="1",
+        ),
+        justify="between",
+        align="center",
+        padding="10px 0",
+        border_bottom="1px solid #F1F5F9",
+        width="100%",
+    )
+
+
 def ranking_section() -> rx.Component:
     return rx.card(
         rx.flex(
             rx.flex(
                 rx.icon("trophy", size=18, color="#F59E0B"),
-                rx.heading("Top 7 Atendentes", size="3", color="#1E293B"),
+                rx.heading("Top 7 — Nota", size="3", color="#1E293B"),
                 align="center",
                 gap="2",
             ),
@@ -176,6 +227,33 @@ def ranking_section() -> rx.Component:
         ),
         rx.flex(
             rx.foreach(AppState.ranking_data, ranking_item),
+            direction="column",
+            width="100%",
+        ),
+        background_color="white",
+        padding="20px",
+        border_radius="12px",
+        border="1px solid #F1F5F9",
+        box_shadow="0 1px 3px rgba(0,0,0,0.06)",
+    )
+
+
+def volume_section() -> rx.Component:
+    return rx.card(
+        rx.flex(
+            rx.flex(
+                rx.icon("bar-chart-2", size=18, color="#0D9488"),
+                rx.heading("Top 7 — Volume", size="3", color="#1E293B"),
+                align="center",
+                gap="2",
+            ),
+            rx.text("Mais atendimentos no período", size="1", color="#94A3B8"),
+            justify="between",
+            align="center",
+            margin_bottom="4",
+        ),
+        rx.flex(
+            rx.foreach(AppState.ranking_volume_data, volume_item),
             direction="column",
             width="100%",
         ),
@@ -264,8 +342,9 @@ def dashboard_content() -> rx.Component:
         chart_section(),
         rx.grid(
             ranking_section(),
+            volume_section(),
             alerts_section(),
-            columns="2",
+            columns="3",
             gap="5",
         ),
         direction="column",

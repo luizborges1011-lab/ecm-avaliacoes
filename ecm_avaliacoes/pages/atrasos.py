@@ -1,12 +1,79 @@
 import reflex as rx
 from ecm_avaliacoes.components import page_layout
 from ecm_avaliacoes.state import AppState
-from ecm_avaliacoes.state.state import AtrasadoAgrupadoItem
+from ecm_avaliacoes.state.state import AtrasadoAgrupadoItem, DeptAtrasoItem
 
 ORANGE = "#F97316"
 ORANGE_SOFT = "#FFF7ED"
 ORANGE_BORDER = "#FDBA74"
 AMBER = "#F59E0B"
+
+
+def dept_card(item: DeptAtrasoItem) -> rx.Component:
+    return rx.card(
+        rx.flex(
+            rx.flex(
+                rx.icon("building-2", size=14, color=ORANGE),
+                rx.text(item.setor, size="2", weight="medium", color="#1E293B", no_wrap=True),
+                align="center", gap="2",
+            ),
+            rx.flex(
+                rx.flex(
+                    rx.text(item.clientes, size="5", weight="bold", color=ORANGE),
+                    rx.text("clientes", size="1", color="#94A3B8"),
+                    direction="column", align="center", gap="0",
+                ),
+                rx.separator(orientation="vertical", size="2"),
+                rx.flex(
+                    rx.text(item.ocorrencias, size="5", weight="bold", color="#64748B"),
+                    rx.text("alertas", size="1", color="#94A3B8"),
+                    direction="column", align="center", gap="0",
+                ),
+                align="center", gap="3",
+            ),
+            direction="column", gap="3",
+        ),
+        background_color="white",
+        padding="14px 18px",
+        border_radius="10px",
+        border="1px solid " + ORANGE_BORDER,
+        min_width="160px",
+        style={
+            "_hover": {"border_color": ORANGE, "box_shadow": "0 2px 8px rgba(249,115,22,0.12)"},
+            "transition": "all 0.15s ease",
+            "cursor": "pointer",
+        },
+        on_click=AppState.set_filter_setor_atrasos(item.setor),
+    )
+
+
+def dept_cards_section() -> rx.Component:
+    return rx.cond(
+        AppState.atrasos_por_departamento.length() > 0,
+        rx.flex(
+            rx.flex(
+                rx.icon("building-2", size=14, color="#64748B"),
+                rx.text(
+                    "Clientes afetados por departamento",
+                    size="2", color="#64748B", weight="medium",
+                ),
+                rx.text("· clique para filtrar", size="1", color="#94A3B8"),
+                align="center", gap="2",
+            ),
+            rx.flex(
+                rx.foreach(AppState.atrasos_por_departamento, dept_card),
+                gap="3",
+                flex_wrap="wrap",
+            ),
+            direction="column",
+            gap="3",
+            padding="16px",
+            background=ORANGE_SOFT,
+            border="1px solid " + ORANGE_BORDER,
+            border_radius="10px",
+        ),
+        rx.box(),
+    )
 
 
 def kpi_atraso(title: str, value, icon: str, color: str, subtitle: str = "") -> rx.Component:
@@ -131,29 +198,89 @@ def empty_state() -> rx.Component:
     )
 
 
+def _filter_label(text: str) -> rx.Component:
+    return rx.text(text, size="1", color="#64748B", weight="medium")
+
+
 def filters_bar() -> rx.Component:
     return rx.flex(
-        rx.input(
-            rx.input.slot(rx.icon("search", size=15, color="#94A3B8")),
-            placeholder="Buscar por cliente...",
-            value=AppState.atrasos_search,
-            on_change=AppState.set_atrasos_search,
-            width="280px",
-            style={"background_color": "white"},
+        # Busca
+        rx.flex(
+            _filter_label("Buscar"),
+            rx.input(
+                rx.input.slot(rx.icon("search", size=15, color="#94A3B8")),
+                placeholder="Buscar por cliente...",
+                value=AppState.atrasos_search,
+                on_change=AppState.set_atrasos_search,
+                width="260px",
+                style={"background_color": "white"},
+            ),
+            direction="column", gap="1",
         ),
-        rx.select(
-            AppState.meses_disponiveis_atrasos,
-            placeholder="Filtrar por mês",
-            value=AppState.filter_mes_atrasos,
-            on_change=AppState.set_filter_mes_atrasos,
-            width="160px",
+        # Período
+        rx.flex(
+            _filter_label("Período"),
+            rx.select(
+                AppState.meses_atrasos_com_todos,
+                value=AppState.filter_mes_atrasos_display,
+                on_change=AppState.set_filter_mes_atrasos,
+                width="160px",
+            ),
+            direction="column", gap="1",
         ),
-        rx.button(
-            rx.icon("x", size=14), "Limpar",
-            variant="ghost", color_scheme="gray", size="2",
-            on_click=AppState.clear_atrasos_filters,
+        # Inputs de data personalizada
+        rx.cond(
+            AppState.usar_periodo_personalizado,
+            rx.flex(
+                _filter_label("De"),
+                rx.input(
+                    type="date",
+                    value=AppState.filter_data_inicio_atrasos,
+                    on_change=AppState.set_filter_data_inicio_atrasos,
+                    width="150px",
+                    style={"background_color": "white"},
+                ),
+                direction="column", gap="1",
+            ),
+            rx.box(),
         ),
-        align="center",
+        rx.cond(
+            AppState.usar_periodo_personalizado,
+            rx.flex(
+                _filter_label("Até"),
+                rx.input(
+                    type="date",
+                    value=AppState.filter_data_fim_atrasos,
+                    on_change=AppState.set_filter_data_fim_atrasos,
+                    width="150px",
+                    style={"background_color": "white"},
+                ),
+                direction="column", gap="1",
+            ),
+            rx.box(),
+        ),
+        # Departamento
+        rx.flex(
+            _filter_label("Departamento"),
+            rx.select(
+                AppState.setores_com_todos_atrasos,
+                value=AppState.filter_setor_atrasos_display,
+                on_change=AppState.set_filter_setor_atrasos,
+                width="180px",
+            ),
+            direction="column", gap="1",
+        ),
+        # Limpar
+        rx.flex(
+            rx.box(height="16px"),
+            rx.button(
+                rx.icon("x", size=14), "Limpar",
+                variant="ghost", color_scheme="gray", size="2",
+                on_click=AppState.clear_atrasos_filters,
+            ),
+            direction="column", gap="1",
+        ),
+        align="end",
         gap="3",
         padding="16px 0",
         flex_wrap="wrap",
@@ -248,6 +375,8 @@ def atrasos_content() -> rx.Component:
             gap="4",
             width="100%",
         ),
+        # Cards por departamento
+        dept_cards_section(),
         # Filtros
         filters_bar(),
         # Banner de resumo
