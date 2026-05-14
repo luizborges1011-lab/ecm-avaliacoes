@@ -164,7 +164,7 @@ def _carregar_do_supabase() -> list[dict]:
                 "conferido, conferido_por"
             )
             .order("data_avaliacao", desc=True)
-            .limit(500)
+            .limit(5000)
             .execute()
         )
         return result.data or []
