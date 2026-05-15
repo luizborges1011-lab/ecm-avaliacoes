@@ -698,10 +698,14 @@ def avaliacao_modal() -> rx.Component:
                         rx.box(),
                     ),
                     rx.flex(flex="1"),
-                    rx.button(
-                        rx.icon("pencil", size=14), "Revisar Nota",
-                        variant="outline", color_scheme="violet", size="2",
-                        on_click=AppState.open_revisar_nota,
+                    rx.cond(
+                        AppState.current_user_is_admin,
+                        rx.button(
+                            rx.icon("pencil", size=14), "Revisar Nota",
+                            variant="outline", color_scheme="violet", size="2",
+                            on_click=AppState.open_revisar_nota,
+                        ),
+                        rx.box(),
                     ),
                     rx.button(
                         rx.icon("circle-x", size=14), "Desconsiderar",

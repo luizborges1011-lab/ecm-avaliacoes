@@ -1291,6 +1291,8 @@ class AppState(rx.State):
 
     @rx.event
     def open_revisar_nota(self):
+        if not self.current_user_is_admin:
+            return
         self.revisar_nova_nota = str(self.selected_avaliacao.nota)
         self.revisar_justificativa = ""
         self.editando_nota = True
