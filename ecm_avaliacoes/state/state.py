@@ -642,6 +642,9 @@ class AppState(rx.State):
     ciclos_log: list[CicloLogItem] = []
     ciclo_rodando: bool = False
 
+    # Cache timestamp — skips reload if data was fetched within 5 minutes
+    _dados_carregados_em: float = 0.0
+
     # -----------------------------------------------------------------------
     # Computed vars
     # -----------------------------------------------------------------------
@@ -1182,11 +1185,13 @@ class AppState(rx.State):
         self.current_user_email = ""
         self.current_user_is_admin = False
         self.current_user_atendente_nome = ""
+        self._dados_carregados_em = 0.0
         return rx.redirect("/login")
 
     @rx.event
     def verificar_auth(self):
         """Guard for pages accessible by all authenticated users."""
+        import time
         if not self.auth_token or self.auth_token not in _SESSIONS:
             self.auth_token = ""
             self.is_auth_checking = False
@@ -1197,11 +1202,14 @@ class AppState(rx.State):
         self.current_user_is_admin = session["is_admin"]
         self.current_user_atendente_nome = session["atendente_nome"]
         self.is_auth_checking = False
+        if time.time() - self._dados_carregados_em < 300:
+            return
         yield AppState.carregar_dados
 
     @rx.event
     def verificar_auth_admin(self):
         """Guard for admin-only pages."""
+        import time
         if not self.auth_token or self.auth_token not in _SESSIONS:
             self.auth_token = ""
             self.is_auth_checking = False
@@ -1214,6 +1222,8 @@ class AppState(rx.State):
         self.is_auth_checking = False
         if not self.current_user_is_admin:
             return rx.redirect("/")
+        if time.time() - self._dados_carregados_em < 300:
+            return
         yield AppState.carregar_dados
 
     # -----------------------------------------------------------------------
@@ -1818,6 +1828,9 @@ class AppState(rx.State):
 
         ciclos_db = _carregar_ciclos_supabase()
         self.ciclos_log = [_dict_to_ciclo(c) for c in ciclos_db]
+
+        import time
+        self._dados_carregados_em = time.time()
 
         if self.pending_open_avaliacao_id:
             pending_id = self.pending_open_avaliacao_id
