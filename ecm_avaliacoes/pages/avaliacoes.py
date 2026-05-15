@@ -97,6 +97,31 @@ def _flabel(text: str) -> rx.Component:
     return rx.text(text, size="1", color="#64748B", weight="medium")
 
 
+def _sort_icon(column: str) -> rx.Component:
+    return rx.cond(
+        AppState.sort_column == column,
+        rx.cond(
+            AppState.sort_direction == "asc",
+            rx.icon("chevron-up", size=13, color="#7700FF"),
+            rx.icon("chevron-down", size=13, color="#7700FF"),
+        ),
+        rx.icon("chevrons-up-down", size=13, color="#CBD5E1"),
+    )
+
+
+def _sortable_col(label: str, column: str) -> rx.Component:
+    return rx.table.column_header_cell(
+        rx.flex(
+            rx.text(label, size="2"),
+            _sort_icon(column),
+            align="center",
+            gap="1",
+            style={"cursor": "pointer", "user_select": "none"},
+        ),
+        on_click=AppState.toggle_sort(column),
+    )
+
+
 def filters_bar() -> rx.Component:
     return rx.flex(
         rx.flex(
@@ -164,6 +189,16 @@ def filters_bar() -> rx.Component:
                 direction="column", gap="1",
             ),
             rx.box(),
+        ),
+        rx.flex(
+            _flabel("Por página"),
+            rx.select(
+                ["25", "50", "100", "Todas"],
+                value=rx.cond(AppState.page_size == 0, "Todas", AppState.page_size.to_string()),
+                on_change=AppState.set_page_size,
+                width="100px",
+            ),
+            direction="column", gap="1",
         ),
         rx.flex(
             rx.box(height="16px"),
@@ -734,18 +769,18 @@ def avaliacoes_content() -> rx.Component:
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
-                        rx.table.column_header_cell("Protocolo / Data"),
+                        _sortable_col("Protocolo / Data", "data"),
                         rx.table.column_header_cell("Cliente"),
                         rx.table.column_header_cell("Atendente"),
-                        rx.table.column_header_cell("Nota"),
+                        _sortable_col("Nota", "nota"),
                         rx.table.column_header_cell("Status"),
-                        rx.table.column_header_cell("Duração"),
+                        _sortable_col("Duração", "duracao"),
                         rx.table.column_header_cell(""),
                     ),
                     background_color="#F8FAFC",
                 ),
                 rx.table.body(
-                    rx.foreach(AppState.avaliacoes_filtradas, table_row),
+                    rx.foreach(AppState.avaliacoes_paginadas, table_row),
                 ),
                 width="100%",
                 variant="ghost",
@@ -755,6 +790,32 @@ def avaliacoes_content() -> rx.Component:
             border="1px solid #E2E8F0",
             overflow="hidden",
             padding="0",
+        ),
+        rx.flex(
+            rx.text(AppState.pagina_info, size="2", color="#64748B"),
+            rx.flex(flex="1"),
+            rx.flex(
+                rx.icon_button(
+                    rx.icon("chevron-left", size=15),
+                    variant="ghost", color_scheme="gray", size="2",
+                    on_click=AppState.pagina_anterior,
+                    disabled=AppState.page_current <= 1,
+                ),
+                rx.text(
+                    AppState.page_current.to_string() + " / " + AppState.total_paginas.to_string(),
+                    size="2", color="#374151", weight="medium",
+                ),
+                rx.icon_button(
+                    rx.icon("chevron-right", size=15),
+                    variant="ghost", color_scheme="gray", size="2",
+                    on_click=AppState.proxima_pagina,
+                    disabled=AppState.page_current >= AppState.total_paginas,
+                ),
+                align="center",
+                gap="2",
+            ),
+            align="center",
+            padding="12px 4px 4px 4px",
         ),
         avaliacao_modal(),
         desconsiderar_dialog(),

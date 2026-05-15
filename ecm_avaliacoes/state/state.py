@@ -610,6 +610,14 @@ class AppState(rx.State):
     filter_conferido: str = ""
     filter_revisado: str = ""
 
+    # Pagination
+    page_size: int = 25
+    page_current: int = 1
+
+    # Sorting
+    sort_column: str = ""
+    sort_direction: str = ""
+
     tv_mode: bool = False
 
     # Historico da conversa (carregado lazily ao abrir avaliação)
@@ -826,7 +834,44 @@ class AppState(rx.State):
             result = [a for a in result if a.justificativa_revisao != ""]
         elif self.filter_revisado == "Sem revisão":
             result = [a for a in result if a.justificativa_revisao == ""]
+        if self.sort_column and self.sort_direction:
+            rev = self.sort_direction == "desc"
+            if self.sort_column == "nota":
+                result = sorted(result, key=lambda a: a.nota, reverse=rev)
+            elif self.sort_column == "duracao":
+                result = sorted(result, key=lambda a: a.tempo_minutos, reverse=rev)
+            elif self.sort_column == "data":
+                result = sorted(result, key=lambda a: a.data_atendimento, reverse=rev)
         return result
+
+    @rx.var
+    def avaliacoes_paginadas(self) -> list[AvaliacaoItem]:
+        base = self.avaliacoes_filtradas
+        if self.page_size == 0:
+            return base
+        start = (self.page_current - 1) * self.page_size
+        return base[start : start + self.page_size]
+
+    @rx.var
+    def total_filtradas(self) -> int:
+        return len(self.avaliacoes_filtradas)
+
+    @rx.var
+    def total_paginas(self) -> int:
+        if self.page_size == 0 or self.total_filtradas == 0:
+            return 1
+        return max(1, (self.total_filtradas + self.page_size - 1) // self.page_size)
+
+    @rx.var
+    def pagina_info(self) -> str:
+        total = self.total_filtradas
+        if total == 0:
+            return "0 avaliações"
+        if self.page_size == 0:
+            return f"{total} avaliações"
+        start = (self.page_current - 1) * self.page_size + 1
+        end = min(self.page_current * self.page_size, total)
+        return f"{start}–{end} de {total}"
 
 
     @rx.var
@@ -1437,22 +1482,27 @@ class AppState(rx.State):
     @rx.event
     def set_search(self, value: str):
         self.search_query = value
+        self.page_current = 1
 
     @rx.event
     def set_filter_status(self, value: str):
         self.filter_status = "" if value == "Todos" else value
+        self.page_current = 1
 
     @rx.event
     def set_filter_responsavel(self, value: str):
         self.filter_responsavel = "" if value == "Todos" else value
+        self.page_current = 1
 
     @rx.event
     def set_filter_conferido(self, value: str):
         self.filter_conferido = "" if value == "Todos" else value
+        self.page_current = 1
 
     @rx.event
     def set_filter_revisado(self, value: str):
         self.filter_revisado = "" if value == "Todos" else value
+        self.page_current = 1
 
     @rx.event
     def set_search_atendentes(self, value: str):
@@ -1467,6 +1517,7 @@ class AppState(rx.State):
     @rx.event
     def set_filter_mes(self, value: str):
         self.filter_mes = "" if value == "Todos" else value
+        self.page_current = 1
 
     @rx.event
     def open_atendente(self, nome: str):
@@ -1486,6 +1537,36 @@ class AppState(rx.State):
         self.filter_mes = ""
         self.filter_conferido = ""
         self.filter_revisado = ""
+        self.page_current = 1
+        self.sort_column = ""
+        self.sort_direction = ""
+
+    @rx.event
+    def toggle_sort(self, column: str):
+        if self.sort_column != column:
+            self.sort_column = column
+            self.sort_direction = "asc"
+        elif self.sort_direction == "asc":
+            self.sort_direction = "desc"
+        else:
+            self.sort_column = ""
+            self.sort_direction = ""
+        self.page_current = 1
+
+    @rx.event
+    def set_page_size(self, value: str):
+        self.page_size = 0 if value == "Todas" else int(value)
+        self.page_current = 1
+
+    @rx.event
+    def pagina_anterior(self):
+        if self.page_current > 1:
+            self.page_current -= 1
+
+    @rx.event
+    def proxima_pagina(self):
+        if self.page_current < self.total_paginas:
+            self.page_current += 1
 
     @rx.event
     def set_filter_mes_atrasos(self, value: str):
