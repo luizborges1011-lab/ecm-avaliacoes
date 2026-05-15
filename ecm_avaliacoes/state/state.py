@@ -705,8 +705,10 @@ class AppState(rx.State):
     def avaliacoes_visiveis(self) -> list[AvaliacaoItem]:
         """Month + role filtered base for all UI computations."""
         base = self.avaliacoes_do_mes
-        if self.current_user_is_admin or not self.current_user_atendente_nome:
+        if self.current_user_is_admin:
             return base
+        if not self.current_user_atendente_nome:
+            return []
         return [a for a in base if a.responsavel == self.current_user_atendente_nome]
 
     @rx.var
