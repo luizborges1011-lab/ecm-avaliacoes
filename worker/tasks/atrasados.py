@@ -41,7 +41,10 @@ _DEPT_RECEPCAO = "c6626f5b-4dc6-4935-9e0d-60ec432deea8"
 
 
 def _dentro_horario_comercial() -> bool:
-    minutos = datetime.now(BRT).hour * 60 + datetime.now(BRT).minute
+    agora = datetime.now(BRT)
+    if agora.weekday() >= 5:  # sábado=5, domingo=6
+        return False
+    minutos = agora.hour * 60 + agora.minute
     almoco = 720 <= minutos < 810        # 12:00–13:30
     fora = minutos >= 1050 or minutos < 465  # após 17:30 ou antes 07:45
     return not (almoco or fora)
