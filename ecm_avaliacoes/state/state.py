@@ -155,19 +155,29 @@ def _carregar_do_supabase() -> list[dict]:
         client = _supabase_client()
         if not client:
             return []
-        result = (
-            client.table("avaliacao")
-            .select(
-                "id, protocolo, cliente, responsavel, data_atendimento, hora_inicio, "
-                "hora_fim, tempo_minutos, tempo_formatado, nota, status, "
-                "pontos_criticos, feedback_final, justificativa_revisao, data_avaliacao, "
-                "conferido, conferido_por"
-            )
-            .order("data_avaliacao", desc=True)
-            .limit(5000)
-            .execute()
+        page_size = 1000
+        all_data = []
+        offset = 0
+        select_fields = (
+            "id, protocolo, cliente, responsavel, data_atendimento, hora_inicio, "
+            "hora_fim, tempo_minutos, tempo_formatado, nota, status, "
+            "pontos_criticos, feedback_final, justificativa_revisao, data_avaliacao, "
+            "conferido, conferido_por"
         )
-        return result.data or []
+        while True:
+            result = (
+                client.table("avaliacao")
+                .select(select_fields)
+                .order("data_avaliacao", desc=True)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            batch = result.data or []
+            all_data.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        return all_data
     except Exception:
         return []
 
